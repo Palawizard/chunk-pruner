@@ -49,7 +49,7 @@ In singleplayer, use the "Prune unvisited chunks" button on the Edit World scree
 From a terminal, with the world closed:
 
 ```sh
-java -jar chunkpruner-<version>.jar --world <path-to-world> --dry-run
+java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path-to-world> --dry-run
 ```
 
 Commands require permission level 4 by default. The exact rules are in [docs/SPEC.md](docs/SPEC.md).

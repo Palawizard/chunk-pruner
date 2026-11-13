@@ -33,7 +33,7 @@ Only `minecraft:overworld`, `minecraft:the_nether` and `minecraft:the_end` are p
 |---|---|---|---|
 | E1 | Dedicated or integrated server startup | A pending schedule (from `/chunkpruner schedule`), or `autoPrune.enabled` with its interval elapsed | Before any level or chunk is loaded. The server's own session lock is held. |
 | E2 | Singleplayer, Edit World screen | The "Prune unvisited chunks" button | The world is not open. The vanilla backup prompt comes first. |
-| E3 | Command line: `java -jar chunkpruner-<version>.jar --world <path> [--dry-run] [--config <file>]` | Manual | The world must not be in use. The tool refuses to run if another process holds `session.lock`. |
+| E3 | Command line: `java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path> [--dry-run] [--config <file>]` | Manual | The world must not be in use. The tool refuses to run if another process holds `session.lock`. |
 
 All three contexts call the same engine with the same config and write the same reports.
 
