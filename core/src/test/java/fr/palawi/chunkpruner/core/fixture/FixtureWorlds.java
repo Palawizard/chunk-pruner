@@ -42,6 +42,9 @@ public final class FixtureWorlds {
                     }
                 }
             }
+            if (result.size() == COMMITTED.size()) {
+                throw new IllegalStateException("no generated world with a level.dat in " + generated);
+            }
         }
         return result;
     }

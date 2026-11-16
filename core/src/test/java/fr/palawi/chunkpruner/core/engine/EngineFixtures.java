@@ -2,13 +2,21 @@ package fr.palawi.chunkpruner.core.engine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.Strictness;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
 import fr.palawi.chunkpruner.core.config.Config;
-import fr.palawi.chunkpruner.core.config.Json;
 import fr.palawi.chunkpruner.core.fixture.Expected;
 import java.io.IOException;
+import java.io.StringReader;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,9 +33,45 @@ final class EngineFixtures {
         return RunSettings.of(world, config, mode, RunContext.E3);
     }
 
+    /** Reads a report with Gson, a parser independent of the core's own JSON code. */
     @SuppressWarnings("unchecked")
     static Map<String, Object> readJson(Path file) throws Exception {
-        return (Map<String, Object>) Json.parse(Files.readString(file));
+        JsonReader reader = new JsonReader(new StringReader(Files.readString(file)));
+        reader.setStrictness(Strictness.STRICT);
+        JsonElement root = JsonParser.parseReader(reader);
+        if (reader.peek() != JsonToken.END_DOCUMENT) {
+            throw new AssertionError("text after the JSON value in " + file);
+        }
+        return (Map<String, Object>) plain(root);
+    }
+
+    private static Object plain(JsonElement element) {
+        if (element.isJsonNull()) {
+            return null;
+        }
+        if (element.isJsonObject()) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            for (Map.Entry<String, JsonElement> entry :
+                    element.getAsJsonObject().entrySet()) {
+                map.put(entry.getKey(), plain(entry.getValue()));
+            }
+            return map;
+        }
+        if (element.isJsonArray()) {
+            List<Object> list = new ArrayList<>();
+            for (JsonElement item : element.getAsJsonArray()) {
+                list.add(plain(item));
+            }
+            return list;
+        }
+        JsonPrimitive primitive = element.getAsJsonPrimitive();
+        if (primitive.isBoolean()) {
+            return primitive.getAsBoolean();
+        }
+        if (primitive.isNumber()) {
+            return primitive.getAsBigDecimal();
+        }
+        return primitive.getAsString();
     }
 
     @SuppressWarnings("unchecked")

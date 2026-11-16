@@ -69,6 +69,7 @@ class PruneFixtureTest {
                 } else {
                     assertTrue(kept != null, storage + " chunk " + old.x() + "," + old.z() + " was kept");
                     assertArrayEquals(old.sectors(), kept.sectors(), storage + " chunk " + old.x() + "," + old.z());
+                    assertEquals(old.timestamp(), kept.timestamp(), storage + " timestamp " + old.x() + "," + old.z());
                 }
             }
             assertEquals(original.get(storage).size() - countPruned(original.get(storage), expected), now.size());

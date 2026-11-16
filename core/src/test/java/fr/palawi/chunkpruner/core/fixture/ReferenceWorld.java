@@ -62,6 +62,7 @@ public final class ReferenceWorld {
             int z,
             int sectorOffset,
             int sectorCount,
+            int timestamp,
             byte[] sectors,
             int compression,
             boolean external,
@@ -110,8 +111,16 @@ public final class ReferenceWorld {
         int rx = Integer.parseInt(parts[1]);
         int rz = Integer.parseInt(parts[2]);
         DataInputStream header = new DataInputStream(new ByteArrayInputStream(bytes, 0, 8192));
+        int[] locations = new int[1024];
+        int[] timestamps = new int[1024];
         for (int i = 0; i < 1024; i++) {
-            int location = header.readInt();
+            locations[i] = header.readInt();
+        }
+        for (int i = 0; i < 1024; i++) {
+            timestamps[i] = header.readInt();
+        }
+        for (int i = 0; i < 1024; i++) {
+            int location = locations[i];
             if (location == 0) {
                 continue;
             }
@@ -123,7 +132,18 @@ public final class ReferenceWorld {
             long end = start + count * 4096L;
             if (offset < 2 || count == 0 || end > bytes.length) {
                 result.add(new Chunk(
-                        storage, file.getFileName().toString(), i, x, z, offset, count, null, -1, false, null));
+                        storage,
+                        file.getFileName().toString(),
+                        i,
+                        x,
+                        z,
+                        offset,
+                        count,
+                        timestamps[i],
+                        null,
+                        -1,
+                        false,
+                        null));
                 continue;
             }
             byte[] sectors = new byte[count * 4096];
@@ -144,6 +164,7 @@ public final class ReferenceWorld {
                     z,
                     offset,
                     count,
+                    timestamps[i],
                     sectors,
                     compression,
                     external,

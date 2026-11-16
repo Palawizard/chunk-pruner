@@ -19,6 +19,8 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     // Test only: the LZ4 codec Minecraft 1.21.1 bundles, to read the LZ4 fixture world.
     testImplementation 'org.lz4:lz4-java:1.8.0'
+    // Test only: a JSON parser independent of the core's own, to read the reports.
+    testImplementation 'com.google.code.gson:gson:2.15.0'
 }
 
 java {
