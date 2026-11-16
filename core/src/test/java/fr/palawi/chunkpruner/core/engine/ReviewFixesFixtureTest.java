@@ -169,6 +169,36 @@ class ReviewFixesFixtureTest {
         assertTrue(ReferenceWorld.read(world).chunks("region", true).stream().anyMatch(c -> c.key() == start));
     }
 
+    /** A region file cut inside its header next to the village start: the start is kept (K4). */
+    @Test
+    void aStartNearAnUnreadableRegionFileIsKept() throws Exception {
+        Path world = FixtureWorlds.copy(FixtureWorlds.committed("1.21.1"), temp.resolve("world"));
+        long start = ReferenceWorld.key(0, 14);
+        Path neighbour = ReferenceWorld.read(world).overworld().resolve("region/r.-1.0.mca");
+        try (RandomAccessFile raf = new RandomAccessFile(neighbour.toFile(), "rw")) {
+            raf.setLength(4000);
+        }
+        assertEquals(
+                "K4",
+                Expected.compute(ReferenceWorld.read(world), Expected.Rules.defaults(), true)
+                        .ruleByChunk
+                        .get(start));
+        Engine.run(settings(world, Config.defaults(), RunMode.PRUNE));
+        assertTrue(ReferenceWorld.read(world).chunks("region", true).stream().anyMatch(c -> c.key() == start));
+    }
+
+    /** A prune on a folder that is not a world creates no session.lock there. */
+    @Test
+    void aFolderWithoutLevelDatGetsNoSessionLock() throws Exception {
+        Path folder = Files.createDirectories(temp.resolve("not-a-world"));
+        try {
+            Engine.run(settings(folder, Config.defaults(), RunMode.PRUNE));
+        } catch (fr.palawi.chunkpruner.core.world.WorldException expected) {
+            // No level.dat, as for any folder that is not a world.
+        }
+        assertFalse(Files.exists(folder.resolve("session.lock")));
+    }
+
     private static String otherProcessLocks(Path world) {
         try {
             Path javaExe = Path.of(System.getProperty("java.home"), "bin", "java");

@@ -56,7 +56,8 @@ public final class Engine {
         }
         Instant started = settings.clock().instant();
         long startNanos = System.nanoTime();
-        boolean rewrites = settings.mode() == RunMode.PRUNE || Journal.exists(world);
+        boolean rewrites = (settings.mode() == RunMode.PRUNE || Journal.exists(world))
+                && Files.isRegularFile(world.resolve("level.dat"));
         try (SessionLock lock = settings.takeSessionLock() ? SessionLock.acquire(world, rewrites) : null) {
             if (Journal.exists(world)) {
                 return resume(world, settings);
@@ -135,7 +136,9 @@ public final class Engine {
                 + loaded.done().size() + " of " + plan.regions().size() + " regions, and finished from its journal on "
                 + finishedAt + ".\n";
         Path json = ReportFiles.folder(world).resolve(plan.runId() + ".json");
-        if (loaded.done().size() < plan.regions().size() || !Files.exists(json)) {
+        if (loaded.done().size() < plan.regions().size()
+                || !Files.exists(json)
+                || !Files.exists(json.resolveSibling(plan.runId() + ".txt"))) {
             json = ReportFiles.write(world, plan.runId(), Json.write(report), text);
         }
         Journal.finish(world);
