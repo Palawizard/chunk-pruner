@@ -41,9 +41,13 @@ public final class SessionLock implements AutoCloseable {
                 throw inUse(world);
             }
             return new SessionLock(channel, lock);
-        } catch (AccessDeniedException | OverlappingFileLockException e) {
+        } catch (OverlappingFileLockException e) {
             closeQuietly(channel);
             throw inUse(world);
+        } catch (AccessDeniedException e) {
+            closeQuietly(channel);
+            throw new WorldInUseException("Cannot lock " + file + ": access denied. The world is open in another"
+                    + " program, or the file is read-only for this user.");
         } catch (IOException e) {
             closeQuietly(channel);
             throw new WorldException("cannot check " + file + ": " + e.getMessage(), e);
