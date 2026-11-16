@@ -9,8 +9,8 @@ core/        Pure Java, no Minecraft imports, JUnit tests:
                anvil/   region header, chunk reader, compression codecs, region writer
                nbt/     read-only streaming NBT reader that picks fields
                world/   level.dat and player files, folder layout, session lock
-               rules/   keep rules K1, K2, K6, K7 and K8 (K3 to K5 in M2)
-               engine/  preflight, scan, decide, rewrite (backup and journal in M2)
+               rules/   keep rules K1, K2, K6, K7 and K8 (K3 to K5 come later)
+               engine/  preflight, scan, decide, rewrite (backup and journal come later)
                report/  JSON and text reports
                config/  JSON reader and writer, config file (no library, ADR-CP-005)
                cli/     command-line entrypoint (E3)
@@ -30,7 +30,7 @@ Checked on 2026-11-16 in the decompiled sources of 1.20.1, 1.21.1 and 26.3 (`Reg
 - A region file starts with 1024 location entries (a 3-byte sector offset and a 1-byte sector count) and 1024 timestamps, followed by 4 KiB sectors. The game writes empty (0-byte) files too, mostly in `entities/` and `poi/`; they hold no chunk. The game ignores an entry whose offset points into the header, whose count is 0, or whose first sector starts past the end of the file.
 - A chunk payload is a 4-byte big-endian length (the data plus the type byte), a 1-byte compression type, then the data. The root of the data is a named compound (type 10, empty name), as written by `NbtIo.writeUnnamedTag`.
 - Bit `0x80` in the type byte means the data is in `c.<chunkX>.<chunkZ>.mcc` next to the region file, with the compression id in the low 7 bits. The game does this when a chunk needs 256 sectors (1 MiB) or more; the entry then has one sector with a 5-byte stub (length 1, type id plus `0x80`). The `.mcc` file holds the compressed data without the 5-byte header. That file is pruned with the chunk. If it is missing, the chunk is kept under K7.
-- The writer rebuilds a region by copying the raw sectors of kept chunks byte for byte, in their order, and only rebuilds the location table (timestamps are kept). Kept chunks are never decompressed or recompressed. A region whose file, or whose `entities/` or `poi/` counterpart, has an entry outside the file or a truncated header is not rewritten: its chunks are kept under K7.
+- The writer rebuilds a region by copying the raw sectors of kept chunks byte for byte, one chunk after the other in the order of their location entries, and only rebuilds the location table (timestamps are kept). It closes the old file before it moves the new one over it or deletes it. Kept chunks are never decompressed or recompressed. A region whose file, or whose `entities/` or `poi/` counterpart, has an entry outside the file or a truncated header is not rewritten: its chunks are kept under K7.
 - LZ4 uses `net.jpountz.lz4.LZ4BlockInputStream`, found by reflection: Minecraft bundles lz4-java from 1.20.5 (`org.lz4:lz4-java` 1.8.0 on 1.21.1, `at.yawk.lz4:lz4-java` 1.10.1 on 26.3, same package). The command line tool finds it only when it is on the class path. Without it, LZ4 chunks count as unreadable and are kept.
 
 Compression ids, from `RegionFileVersion`:
@@ -45,7 +45,7 @@ Compression ids, from `RegionFileVersion`:
 
 Any other id is unknown to the game and to the engine (K7).
 
-Chunk keys read by the engine, the same on the three versions (`ChunkSerializer` on 1.20.1 and 1.21.1, `SerializableChunkData` on 26.3): `xPos` and `zPos` (int, checked against the entry's position), `InhabitedTime` (long), `Status` (string such as `minecraft:full`). Structure data is in the `structures` compound with `starts` and `References`, read by K4 in M2. Section palettes are compounds with `Name` on 1.20.1 and 1.21.1 and plain strings on 26.3 (the engine does not read them; the test reader does).
+Chunk keys read by the engine, the same on the three versions (`ChunkSerializer` on 1.20.1 and 1.21.1, `SerializableChunkData` on 26.3): `xPos` and `zPos` (int, checked against the entry's position), `InhabitedTime` (long), `Status` (string such as `minecraft:full`). Structure data is in the `structures` compound with `starts` and `References`, to be read by K4. Section palettes are compounds with `Name` on 1.20.1 and 1.21.1 and plain strings on 26.3 (the engine does not read them; the test reader does).
 
 ## World data per version
 
@@ -72,9 +72,9 @@ A streaming, read-only parser that extracts only the requested paths (`Inhabited
 
 ## Keep rules and run flow in this version
 
-K1, K2, K6, K7 and K8 are checked; K3, K4 and K5 come in M2 and every report says so. A dimension is scanned in two passes: the first reads every chunk of `region/` and records the chunks kept by K1, the second decides each chunk (K8 needs the whole K1 set) and plans which entries leave `region/`, `entities/` and `poi/`. The plan, the free space check and the report are the same in a dry run and in a prune run.
+K1, K2, K6, K7 and K8 are checked; K3, K4 and K5 are not written yet, and every report says so. A dimension is scanned in two passes: the first reads every chunk of `region/` and records the chunks kept by K1, the second decides each chunk (K8 needs the whole K1 set) and plans which entries leave `region/`, `entities/` and `poi/`. The plan, the free space check and the report are the same in a dry run and in a prune run.
 
-The rewrite has no backup and no journal yet (M2). Until then it is only reachable from the tests: the command line refuses to run without `--dry-run`, no mod entry point calls the engine, and the only other caller is the test-only `FixturePruneTool`, which `check-release-artifacts.ps1` refuses in a release JAR.
+The rewrite has no backup and no journal yet. Until then it is only reachable from the tests: the command line refuses to run without `--dry-run`, no mod entry point calls the engine, and the only other caller is the test-only `FixturePruneTool`, which `check-release-artifacts.ps1` refuses in a release JAR.
 
 ## Hook points (to verify per band)
 

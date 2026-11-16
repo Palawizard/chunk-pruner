@@ -97,7 +97,7 @@ A command never prunes a running world directly.
 |---|---|---|
 | `inhabitedThresholdTicks` | `0` | K1 threshold (20 ticks per second). |
 | `protectRadiusChunks` | `4` | K2 radius. |
-| `protectNeighborRadiusChunks` | `1` | K8 radius, in chunks. `0` turns K8 off. |
+| `protectNeighborRadiusChunks` | `1` | K8 radius, in chunks, from 0 to 16. `0` turns K8 off. |
 | `protectForcedChunks` | `true` | K3. |
 | `protectStructures` | `true` | K4. |
 | `protectPlayerEntities` | `true` | K5. |

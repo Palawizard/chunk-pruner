@@ -140,7 +140,7 @@ Measured on 2026-11-16 on the vanilla dedicated servers, with the join client st
 
 The filled chunks have the highest values. `InhabitedTime` also grew 5 (1.20.1, 1.21.1) or 6 (26.3) chunks away from the player, beyond the simulation distance, and only the outer one or two rings of the loaded area stayed at 0.
 
-A chunk at 0 was not saved again after a player came near, so no block of it was changed by a player, and the game generates its terrain again from the seed. Its entities are saved apart, in `entities/`, so they may have changed: extending K5 to the entities a player may have placed or moved is planned for M2. K8 keeps the gaps inside played areas, the 1.20.1 case above, at the cost of one ring of chunks around them.
+A chunk at 0 was not saved again after a player came near, so no block of it was changed by a player, and the game generates its terrain again from the seed. Its entities are saved apart, in `entities/`, so they may have changed: extending K5 to the entities a player may have placed or moved is planned before pruning is offered. K8 keeps the gaps inside played areas, the 1.20.1 case above, at the cost of one ring of chunks around them.
 
 Options considered: a higher K1 threshold by default (it does not keep the zero chunks inside a played area, and the right value depends on how long players stay); keeping every chunk that has an entity (it would keep most flown-over areas, where animals spawn at generation).
 

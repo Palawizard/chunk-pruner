@@ -28,7 +28,7 @@ RCON commands, in order (UTC time, command, answer):
 
 ## What the game wrote
 
-Measured on the committed files with a script independent of the engine (Python, reading the region headers and the NBT, with its own LZ4 block decoder for the lz4-java stream format):
+Measured on the committed files with a Python script independent of the engine, kept outside the repository (it reads the region headers and the NBT, with its own LZ4 block decoder for the lz4-java stream format). `ReferenceWorldTest` checks the chunk count and the `InhabitedTime` groups again with the Java test reader:
 
 ```text
 . region 4 files, 0 empty, 1369 chunks, max sectors 2 compression {4: 1369} mcc 0
