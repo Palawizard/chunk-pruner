@@ -16,10 +16,12 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -79,8 +81,8 @@ class InterruptedPruneFixtureTest {
         int rewritten = 0;
         for (String path : paths) {
             String state = now.get(path);
-            boolean old = java.util.Objects.equals(state, before.get(path));
-            boolean fresh = java.util.Objects.equals(state, after.get(path));
+            boolean old = Objects.equals(state, before.get(path));
+            boolean fresh = Objects.equals(state, after.get(path));
             assertTrue(old || fresh, path + " is neither the old file nor the pruned one");
             rewritten += fresh && !old ? 1 : 0;
         }
@@ -108,9 +110,9 @@ class InterruptedPruneFixtureTest {
 
     /** Returns true when the child was killed before it finished. */
     private static boolean runAndKill(Path world, String event, int count, int delayMillis) throws Exception {
-        Path java = Path.of(System.getProperty("java.home"), "bin", "java");
-        List<String> command = new java.util.ArrayList<>(List.of(
-                java.toString(),
+        Path javaExe = Path.of(System.getProperty("java.home"), "bin", "java");
+        List<String> command = new ArrayList<>(List.of(
+                javaExe.toString(),
                 "-cp",
                 System.getProperty("java.class.path"),
                 PruneChild.class.getName(),
