@@ -29,6 +29,12 @@ public final class ExpectedEntities {
 
     /** {@code players}: UUIDs as four ints, from the player file names. */
     public static boolean keeps(Chunk entities, Chunk region, Set<List<Integer>> players, String dimension) {
+        Object list = entities.nbt().get("Entities");
+        return list instanceof List<?> all && anyKept(all, structures(region), players, dimension);
+    }
+
+    /** The ids, without namespace, of the structures that start in the chunk or reference it. */
+    public static Set<String> structures(Chunk region) {
         Set<String> structures = new HashSet<>();
         Map<String, Object> s = ReferenceNbt.compound(region.nbt(), "structures");
         if (s != null) {
@@ -45,12 +51,24 @@ public final class ExpectedEntities {
                 }
             }
         }
-        Object list = entities.nbt().get("Entities");
-        return list instanceof List<?> all && anyKept(all, structures, players, dimension);
+        return structures;
     }
 
-    /** Why an entity keeps its chunk, for the measurements, or null. */
+    /** Why an entity keeps its chunk, or null. */
     public static String why(Map<?, ?> e, Set<String> structures, Set<List<Integer>> players, String dimension) {
+        return why(e, structures, players, dimension, true);
+    }
+
+    /**
+     * {@code generationExcused} false leaves out the exception for what world generation places,
+     * for the measurements of what that exception saves.
+     */
+    public static String why(
+            Map<?, ?> e,
+            Set<String> structures,
+            Set<List<Integer>> players,
+            String dimension,
+            boolean generationExcused) {
         String id = String.valueOf(e.get("id")).replace("minecraft:", "");
         if (e.containsKey("CustomName")) return "named " + id;
         if (e.containsKey("Owner") && e.containsKey("Health")) return "owned " + id;
@@ -94,7 +112,7 @@ public final class ExpectedEntities {
                 || id.endsWith("_boat")
                 || id.endsWith("_raft");
         if (!persistent && !placedType) return null;
-        if (fromGeneration(id, e, structures, dimension)) return null;
+        if (generationExcused && fromGeneration(id, e, structures, dimension)) return null;
         return (persistent ? "persistent " : "placed ") + id;
     }
 

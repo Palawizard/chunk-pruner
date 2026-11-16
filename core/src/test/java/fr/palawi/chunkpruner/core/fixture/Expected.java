@@ -37,7 +37,10 @@ public final class Expected {
         return compute(world, new Rules(threshold, radius, neighborRadius, areas, true, true, true), lz4);
     }
 
-    /** The settings of the rules, as in the config of SPEC section 9. */
+    /**
+     * The settings of the rules, as in the config of SPEC section 9. A negative {@code radius}
+     * leaves K2 out, which the config cannot do, for the measurements.
+     */
     public record Rules(
             long threshold,
             int radius,
@@ -96,7 +99,7 @@ public final class Expected {
             String rule = null;
             if (!unreadable.contains(c.key()) && k1.contains(c.key())) {
                 rule = "K1";
-            } else if (nearPoint(world, c, rules.radius())) {
+            } else if (rules.radius() >= 0 && nearPoint(world, c, rules.radius())) {
                 rule = "K2";
             } else if (forced.contains(c.key())) {
                 rule = "K3";
