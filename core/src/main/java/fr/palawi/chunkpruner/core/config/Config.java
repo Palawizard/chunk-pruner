@@ -20,7 +20,7 @@ public final class Config {
     public static final String MODE_DRY_RUN = "dry-run";
     public static final String MODE_PRUNE = "prune";
     private static final int MAX_RADIUS = 4096;
-    private static final int MAX_NEIGHBOR_RADIUS = 64;
+    private static final int MAX_NEIGHBOR_RADIUS = 16;
 
     private final Map<String, Object> raw;
     private final long inhabitedThresholdTicks;
@@ -45,9 +45,9 @@ public final class Config {
         protectForcedChunks = bool(raw, "protectForcedChunks", true);
         protectStructures = bool(raw, "protectStructures", true);
         protectPlayerEntities = bool(raw, "protectPlayerEntities", true);
-        protectedAreas = areas(raw.get("protectedAreas"));
+        protectedAreas = raw.containsKey("protectedAreas") ? areas(raw.get("protectedAreas")) : List.of();
         Map<String, Object> dimensionsObject = object(raw, "dimensions");
-        dimensions = dimensionList(dimensionsObject.get("include"));
+        dimensions = dimensionList(dimensionsObject, dimensionsObject.get("include"));
         backup = bool(raw, "backup", true);
         backupRetention = (int) whole(raw, "backupRetention", 3, 0, 1000);
         Map<String, Object> autoPrune = object(raw, "autoPrune");
@@ -69,7 +69,7 @@ public final class Config {
     }
 
     public static Config fromJson(String text) throws JsonException {
-        String body = text.startsWith("﻿") ? text.substring(1) : text;
+        String body = text.startsWith("\uFEFF") ? text.substring(1) : text;
         if (!(Json.parse(body) instanceof Map<?, ?> root)) {
             throw new JsonException("the config must be a JSON object");
         }
@@ -115,22 +115,26 @@ public final class Config {
         return out;
     }
 
-    /** The file content: unknown keys where they were, known keys with their values in use. */
+    /**
+     * The file content: every key of the file as it was (they were all checked when it was read,
+     * unknown keys included, also inside {@code protectedAreas} entries), plus the missing known
+     * keys with their default.
+     */
     public String toJson() {
-        return Json.write(merge(raw, effective()));
+        return Json.write(addMissing(raw, effective()));
     }
 
-    private static Map<String, Object> merge(Map<String, Object> original, Map<String, Object> known) {
+    private static Map<String, Object> addMissing(Map<String, Object> original, Map<String, Object> known) {
         Map<String, Object> out = new LinkedHashMap<>(original);
         known.forEach((key, value) -> {
-            if (value instanceof Map<?, ?> inner && original.get(key) instanceof Map<?, ?> existing) {
+            if (!original.containsKey(key)) {
+                out.put(key, value);
+            } else if (value instanceof Map<?, ?> inner && original.get(key) instanceof Map<?, ?> existing) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> e = (Map<String, Object>) existing;
                 @SuppressWarnings("unchecked")
                 Map<String, Object> v = (Map<String, Object>) inner;
-                out.put(key, merge(e, v));
-            } else {
-                out.put(key, value);
+                out.put(key, addMissing(e, v));
             }
         });
         return out;
@@ -186,8 +190,8 @@ public final class Config {
         throw new JsonException(key + " must be an object");
     }
 
-    private static List<DimensionId> dimensionList(Object value) throws JsonException {
-        if (value == null) {
+    private static List<DimensionId> dimensionList(Map<String, Object> dimensions, Object value) throws JsonException {
+        if (!dimensions.containsKey("include")) {
             return List.of(DimensionId.OVERWORLD, DimensionId.NETHER, DimensionId.END);
         }
         if (!(value instanceof List<?> list)) {
@@ -204,9 +208,6 @@ public final class Config {
     }
 
     private static List<ProtectedArea> areas(Object value) throws JsonException {
-        if (value == null) {
-            return List.of();
-        }
         if (!(value instanceof List<?> list)) {
             throw new JsonException("protectedAreas must be a list");
         }

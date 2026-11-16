@@ -143,11 +143,11 @@ public final class Json {
                     if (at + 4 > text.length()) {
                         throw error("short unicode escape");
                     }
-                    try {
-                        out.append((char) Integer.parseInt(text.substring(at, at + 4), 16));
-                    } catch (NumberFormatException ex) {
+                    String hex = text.substring(at, at + 4);
+                    if (!hex.chars().allMatch(h -> Character.digit(h, 16) >= 0)) {
                         throw error("bad unicode escape");
                     }
+                    out.append((char) Integer.parseInt(hex, 16));
                     at += 4;
                 }
                 default -> throw error("bad escape \\" + e);
@@ -320,7 +320,7 @@ public final class Json {
                 case '\f' -> out.append("\\f");
                 default -> {
                     if (c < 0x20) {
-                        out.append(String.format("\\u%04x", (int) c));
+                        out.append(String.format(java.util.Locale.ROOT, "\\u%04x", (int) c));
                     } else {
                         out.append(c);
                     }

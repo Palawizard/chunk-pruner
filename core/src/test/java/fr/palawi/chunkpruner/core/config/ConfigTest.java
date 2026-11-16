@@ -45,8 +45,18 @@ class ConfigTest {
     }
 
     @Test
+    void unknownKeysInsideAreaEntriesAreKept() throws Exception {
+        Config config = Config.fromJson("{\"protectedAreas\": [{\"dimension\": \"overworld\", \"minX\": 0,"
+                + " \"minZ\": 0, \"maxX\": 15, \"maxZ\": 15, \"label\": \"base\"}]}");
+        Map<?, ?> written = (Map<?, ?>) Json.parse(config.toJson());
+        Map<?, ?> area = (Map<?, ?>) ((List<?>) written.get("protectedAreas")).get(0);
+        assertEquals("base", area.get("label"));
+        assertEquals("overworld", area.get("dimension"));
+    }
+
+    @Test
     void readsAreasAndDimensions() throws Exception {
-        Config config = Config.fromJson("﻿{\"protectedAreas\": [{\"dimension\": \"minecraft:the_nether\","
+        Config config = Config.fromJson("\uFEFF{\"protectedAreas\": [{\"dimension\": \"minecraft:the_nether\","
                 + " \"minX\": -10, \"minZ\": -20, \"maxX\": 30, \"maxZ\": 40}],"
                 + " \"dimensions\": {\"include\": [\"overworld\", \"examplemod:mining\"]}}");
         Config.ProtectedArea area = config.protectedAreas().get(0);
@@ -65,7 +75,9 @@ class ConfigTest {
                 "{\"protectRadiusChunks\": -1}",
                 "{\"protectRadiusChunks\": 1.5}",
                 "{\"protectNeighborRadiusChunks\": \"1\"}",
-                "{\"protectNeighborRadiusChunks\": 65}",
+                "{\"protectNeighborRadiusChunks\": 17}",
+                "{\"protectedAreas\": null}",
+                "{\"dimensions\": {\"include\": null}}",
                 "{\"inhabitedThresholdTicks\": null}",
                 "{\"backup\": \"yes\"}",
                 "{\"autoPrune\": {\"mode\": \"always\"}}",

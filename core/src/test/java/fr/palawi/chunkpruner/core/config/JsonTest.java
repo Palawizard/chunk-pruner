@@ -64,7 +64,9 @@ class JsonTest {
                 "-",
                 "tru",
                 "{a: 1}",
-                "\"tab\tinside\""
+                "\"tab\tinside\"",
+                "\"\\u+041\"",
+                "\"\\u-001\""
             })
     void rejectsInvalidText(String text) {
         assertThrows(JsonException.class, () -> Json.parse(text));
