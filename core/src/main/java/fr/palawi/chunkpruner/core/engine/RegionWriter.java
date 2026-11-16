@@ -1,13 +1,13 @@
-package fr.palawi.chunkpruner.core.anvil;
+package fr.palawi.chunkpruner.core.engine;
 
+import fr.palawi.chunkpruner.core.anvil.ChunkReader;
+import fr.palawi.chunkpruner.core.anvil.RegionFile;
 import fr.palawi.chunkpruner.core.anvil.RegionFile.ChunkEntry;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,12 +20,15 @@ import java.util.Set;
  * as {@code .tmp}, forced to disk, then moved over it once the old file is closed. When no chunk
  * is left, the file is deleted. The external {@code .mcc} payload of each removed chunk is deleted
  * with it.
+ *
+ * <p>Package-private on purpose (ADR-CP-008): the only way to rewrite a region is {@link
+ * Engine#run}, which backs the files up and writes the journal first.
  */
-public final class RegionWriter {
+final class RegionWriter {
     private RegionWriter() {}
 
     /** Size of the rebuilt file for the kept chunks, 0 when it would be deleted. */
-    public static long sizeAfter(RegionFile region, Set<Integer> removed) {
+    static long sizeAfter(RegionFile region, Set<Integer> removed) {
         long sectors = 0;
         for (ChunkEntry entry : region.entries()) {
             if (!removed.contains(entry.index())) {
@@ -39,7 +42,7 @@ public final class RegionWriter {
      * Removes the given chunk indices from the file. The region must be {@link
      * RegionFile#rewritable()}; the caller has checked it during the scan.
      */
-    public static void remove(RegionFile region, Set<Integer> removed) throws IOException {
+    static void remove(RegionFile region, Set<Integer> removed, RunListener listener) throws IOException {
         if (!region.rewritable()) {
             throw new IOException("region file cannot be rebuilt byte for byte: " + region.path());
         }
@@ -62,7 +65,8 @@ public final class RegionWriter {
         if (kept.isEmpty()) {
             Files.delete(target);
         } else {
-            replace(temp, target);
+            listener.event(RunListener.TEMP_WRITTEN, temp);
+            AtomicFiles.move(temp, target);
         }
         for (Path external : externalFiles) {
             Files.deleteIfExists(external);
@@ -94,14 +98,6 @@ public final class RegionWriter {
                 position += entry.byteLength();
             }
             out.force(true);
-        }
-    }
-
-    private static void replace(Path temp, Path target) throws IOException {
-        try {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

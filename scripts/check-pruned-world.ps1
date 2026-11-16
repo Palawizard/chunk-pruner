@@ -8,14 +8,17 @@ param(
     [string]$World,
     [string]$Label,
     [switch]$SkipBuild,
+    # S5: the prune runs in a second process that is killed after its first region, and the next
+    # run finishes it from the journal before the server opens the world.
+    [switch]$Interrupt,
     [int]$ServerPort = 25640,
     [int]$RconPort = 25650
 )
 
-# S2 on a real server: prunes a copy of the world with the test-only fixture tool (the command
-# line refuses to prune in this version), opens the copy on the vanilla dedicated server of the
-# same version, teleports the join client into a pruned area, and checks that the server loads
-# the world without region errors and generates that chunk again.
+# S2 (and S5 with -Interrupt) on a real server: prunes a copy of the world with the test-only
+# fixture tool, opens the copy on the vanilla dedicated server of the same version, teleports the
+# join client into a pruned area, and checks that the server loads the world without region
+# errors and generates that chunk again.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 . (Join-Path $PSScriptRoot 'vanilla-server.ps1')
@@ -45,7 +48,9 @@ $worldCopy = Join-Path $serverDir 'world'
 Copy-Item -LiteralPath $World -Destination $worldCopy -Recurse
 Remove-Item -LiteralPath (Join-Path $worldCopy 'chunkpruner') -Recurse -Force -ErrorAction SilentlyContinue
 
-$pruned = Invoke-FixtureTool @('prune', $worldCopy)
+$pruneCommand = 'prune'
+if ($Interrupt) { $pruneCommand = 'prune-interrupted' }
+$pruned = Invoke-FixtureTool @($pruneCommand, $worldCopy)
 Write-Host "  $($pruned.Output -replace "`n", "`n  ")"
 if ($pruned.Code -ne 0 -or $pruned.Output -notmatch 'target (-?\d+) (-?\d+)') { throw "$Label`: the prune step failed." }
 $targetX = [int]$Matches[1]
@@ -102,4 +107,6 @@ $problems = @($log -split "`r?`n" | Where-Object {
 if ($problems.Count -gt 0) { throw "$Label`: the server logged region problems:`n$($problems -join "`n")" }
 $generated = Invoke-FixtureTool @('generated', $worldCopy, "$targetX", "$targetZ")
 if ($generated.Code -ne 0) { throw "$Label`: chunk $targetX, $targetZ was not generated again ($($generated.Output))." }
-Write-Host "$Label OK: the pruned copy opened on the vanilla $Minecraft server, and chunk $targetX, $targetZ generated again ($($generated.Output))." -ForegroundColor Green
+$how = 'pruned'
+if ($Interrupt) { $how = 'interrupted, resumed and pruned' }
+Write-Host "$Label OK: the $how copy opened on the vanilla $Minecraft server, and chunk $targetX, $targetZ generated again ($($generated.Output))." -ForegroundColor Green

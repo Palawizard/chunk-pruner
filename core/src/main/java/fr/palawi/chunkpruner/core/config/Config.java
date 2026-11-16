@@ -261,6 +261,18 @@ public final class Config {
         return protectNeighborRadiusChunks;
     }
 
+    public boolean protectForcedChunks() {
+        return protectForcedChunks;
+    }
+
+    public boolean protectStructures() {
+        return protectStructures;
+    }
+
+    public boolean protectPlayerEntities() {
+        return protectPlayerEntities;
+    }
+
     public List<ProtectedArea> protectedAreas() {
         return protectedAreas;
     }
@@ -271,6 +283,10 @@ public final class Config {
 
     public boolean backup() {
         return backup;
+    }
+
+    public int backupRetention() {
+        return backupRetention;
     }
 
     /** A K6 box in block coordinates, bounds included. */

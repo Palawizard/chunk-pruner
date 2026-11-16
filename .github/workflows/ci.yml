@@ -135,7 +135,7 @@ jobs:
                       print(path, 'chunks over 1 sector:', sum(1 for c in counts if c > 1), 'max sectors:', max(counts or [0]))
           PY
 
-      - name: Run S1, S2 and S6 on the committed and the generated world
+      - name: Run S1, S2 and S6 on the committed and the generated world, and measure K4 and K5
         run: |
           gradle_java=$(jq -r '.core.gradleJava' versions/version-matrix.json)
           JAVA_HOME="$(printenv "JAVA_HOME_${gradle_java}_X64")" || { echo "No JDK ${gradle_java} set up."; exit 1; }
@@ -143,14 +143,20 @@ jobs:
           cd core
           ./gradlew writeFixtureClasspath test --no-daemon -PgeneratedWorlds=../build/generated-worlds \
             --tests '*DryRunFixtureTest' --tests '*PruneFixtureTest' --tests '*DamagedRegionFixtureTest' \
+            --tests '*KeepShareMeasurementTest' \
             -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64
 
-      - name: Open pruned copies on the vanilla server
+      # Share of the chunks K1 and K8 alone would prune that K4 and K5 keep (ARCHITECTURE).
+      - name: Print the K4 and K5 measurements
+        run: cat core/build/measurements/*.txt
+
+      - name: Open pruned copies on the vanilla server (S2, S5 interrupted and resumed)
         shell: pwsh
         env:
           MINECRAFT: ${{ matrix.minecraft }}
         run: |
-          ./scripts/check-pruned-world.ps1 -Minecraft $env:MINECRAFT -World "core/src/test/fixtures/worlds/$env:MINECRAFT/world" -Label "committed-$env:MINECRAFT" -SkipBuild
+          ./scripts/check-pruned-world.ps1 -Minecraft $env:MINECRAFT -World "core/src/test/fixtures/worlds/$env:MINECRAFT/world" -Label "committed-$env:MINECRAFT" -SkipBuild -Interrupt
+          ./scripts/check-pruned-world.ps1 -Minecraft $env:MINECRAFT -World "core/src/test/fixtures/worlds/$env:MINECRAFT-keep/world" -Label "keep-$env:MINECRAFT" -SkipBuild
           ./scripts/check-pruned-world.ps1 -Minecraft $env:MINECRAFT -World "build/generated-worlds/normal-$env:MINECRAFT/world" -Label "generated-$env:MINECRAFT" -SkipBuild
 
       - name: Upload server logs

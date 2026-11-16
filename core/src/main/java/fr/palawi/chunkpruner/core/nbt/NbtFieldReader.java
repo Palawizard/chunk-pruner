@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,11 +18,14 @@ import java.util.Set;
  * Streaming, read-only NBT reader. It walks a whole root compound, keeps only the values at the
  * requested paths and skips everything else without building a tree. Paths are compound keys
  * joined with dots ({@code Data.SpawnX}); list elements are not addressable, but a requested
- * list of numbers or strings is kept whole.
+ * list or compound is kept whole.
  *
  * <p>Kept values: integer tags as {@link Long}, float and double tags as {@link Double}, strings
- * as {@link String}, int arrays as {@code int[]}, lists of numbers or strings as {@code List}.
- * Byte and long arrays, compounds and other lists are only skipped.
+ * as {@link String}, int arrays as {@code int[]}, long arrays as {@code long[]}, lists as {@code
+ * List} and compounds as {@code Map<String, Object>} of the same kinds of values. Byte arrays are
+ * only skipped. A requested list or array, and any list or array inside a requested compound or
+ * list, holds at most {@link #MAX_KEPT_ELEMENTS} elements, and one read keeps at most {@link
+ * #MAX_KEPT_VALUES} values; more is a format error, so the caller never works on part of the data.
  */
 public final class NbtFieldReader {
     public static final int MAX_DEPTH = 512;
@@ -38,12 +42,15 @@ public final class NbtFieldReader {
     private static final int TAG_COMPOUND = 10;
     private static final int TAG_INT_ARRAY = 11;
     private static final int TAG_LONG_ARRAY = 12;
-    private static final int MAX_KEPT_ELEMENTS = 1 << 16;
+    public static final int MAX_KEPT_ELEMENTS = 1 << 16;
+    /** Values kept in one read, all requested subtrees together. */
+    public static final int MAX_KEPT_VALUES = 1 << 20;
 
     private final DataInputStream in;
     private final Set<String> wanted;
     private final Set<String> prefixes = new HashSet<>();
     private final Map<String, Object> found = new HashMap<>();
+    private int keptValues;
 
     private NbtFieldReader(InputStream in, Set<String> wanted) {
         this.in = in instanceof DataInputStream data ? data : new DataInputStream(in);
@@ -109,11 +116,12 @@ public final class NbtFieldReader {
             }
             case TAG_LIST -> list(path, keep, depth + 1);
             case TAG_COMPOUND -> {
-                String inner = path != null && prefixes.contains(path) ? path : null;
-                if (inner == null) {
-                    skipCompound(depth + 1);
+                if (keep) {
+                    found.put(path, compoundTree(depth + 1));
+                } else if (path != null && prefixes.contains(path)) {
+                    compound(path, depth + 1);
                 } else {
-                    compound(inner, depth + 1);
+                    skipCompound(depth + 1);
                 }
             }
             case TAG_INT_ARRAY -> {
@@ -123,9 +131,72 @@ public final class NbtFieldReader {
                     skipArray(4);
                 }
             }
-            case TAG_LONG_ARRAY -> skipArray(8);
+            case TAG_LONG_ARRAY -> {
+                if (keep) {
+                    found.put(path, readLongArray());
+                } else {
+                    skipArray(8);
+                }
+            }
             default -> throw new NbtFormatException("unknown tag type " + type);
         }
+    }
+
+    /** The whole value of a tag inside a requested compound or list. */
+    private Object tree(int type, int depth) throws IOException {
+        if (++keptValues > MAX_KEPT_VALUES) {
+            throw new NbtFormatException("more than " + MAX_KEPT_VALUES + " values to keep");
+        }
+        return switch (type) {
+            case TAG_BYTE, TAG_SHORT, TAG_INT, TAG_LONG, TAG_FLOAT, TAG_DOUBLE, TAG_STRING -> scalar(type);
+            case TAG_BYTE_ARRAY -> {
+                skipArray(1);
+                yield new byte[0];
+            }
+            case TAG_LIST -> listTree(depth + 1);
+            case TAG_COMPOUND -> compoundTree(depth + 1);
+            case TAG_INT_ARRAY -> readIntArray();
+            case TAG_LONG_ARRAY -> readLongArray();
+            default -> throw new NbtFormatException("unknown tag type " + type);
+        };
+    }
+
+    private Map<String, Object> compoundTree(int depth) throws IOException {
+        checkDepth(depth);
+        Map<String, Object> values = new LinkedHashMap<>();
+        while (true) {
+            int type = in.readUnsignedByte();
+            if (type == TAG_END) {
+                return Collections.unmodifiableMap(values);
+            }
+            String key = in.readUTF();
+            values.put(key, tree(type, depth));
+        }
+    }
+
+    private List<Object> listTree(int depth) throws IOException {
+        checkDepth(depth);
+        int elementType = in.readUnsignedByte();
+        int size = listSize(elementType);
+        if (size > MAX_KEPT_ELEMENTS) {
+            throw new NbtFormatException("list of " + size + " elements is too long to keep");
+        }
+        List<Object> values = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            values.add(tree(elementType, depth));
+        }
+        return Collections.unmodifiableList(values);
+    }
+
+    private int listSize(int elementType) throws IOException {
+        int size = in.readInt();
+        if (size < 0) {
+            throw new NbtFormatException("negative list size " + size);
+        }
+        if (elementType == TAG_END && size > 0) {
+            throw new NbtFormatException("list of end tags with " + size + " elements");
+        }
+        return size;
     }
 
     private void keep(boolean keep, String path, Object value) {
@@ -137,18 +208,15 @@ public final class NbtFieldReader {
     private void list(String path, boolean keep, int depth) throws IOException {
         checkDepth(depth);
         int elementType = in.readUnsignedByte();
-        int size = in.readInt();
-        if (size < 0) {
-            throw new NbtFormatException("negative list size " + size);
+        int size = listSize(elementType);
+        if (keep && size > MAX_KEPT_ELEMENTS) {
+            throw new NbtFormatException("list of " + size + " elements is too long to keep");
         }
-        if (elementType == TAG_END && size > 0) {
-            throw new NbtFormatException("list of end tags with " + size + " elements");
-        }
-        boolean keepElements = keep && size <= MAX_KEPT_ELEMENTS && isKeptScalar(elementType);
+        boolean keepElements = keep;
         List<Object> values = keepElements ? new ArrayList<>(size) : null;
         for (int i = 0; i < size; i++) {
             if (keepElements) {
-                values.add(scalar(elementType));
+                values.add(tree(elementType, depth));
             } else {
                 payload(elementType, null, depth);
             }
@@ -156,10 +224,6 @@ public final class NbtFieldReader {
         if (keepElements) {
             found.put(path, Collections.unmodifiableList(values));
         }
-    }
-
-    private static boolean isKeptScalar(int type) {
-        return type >= TAG_BYTE && type <= TAG_DOUBLE || type == TAG_STRING;
     }
 
     private Object scalar(int type) throws IOException {
@@ -194,6 +258,18 @@ public final class NbtFieldReader {
         int[] values = new int[length];
         for (int i = 0; i < length; i++) {
             values[i] = in.readInt();
+        }
+        return values;
+    }
+
+    private long[] readLongArray() throws IOException {
+        int length = in.readInt();
+        if (length < 0 || length > MAX_KEPT_ELEMENTS) {
+            throw new NbtFormatException("long array length " + length + " out of range");
+        }
+        long[] values = new long[length];
+        for (int i = 0; i < length; i++) {
+            values[i] = in.readLong();
         }
         return values;
     }

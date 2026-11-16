@@ -36,6 +36,15 @@ public final class ReportText {
             out.append(", ").append(report.loader()).append(" build");
         }
         out.append(".\n");
+        if (report.backup() != null) {
+            out.append("Backup of the changed files: ")
+                    .append(report.backup())
+                    .append(". To undo the run, follow ")
+                    .append(report.backup())
+                    .append("/restore.txt.\n");
+        } else if (!dryRun && report.pruned() > 0) {
+            out.append("No backup: backup is false in the config.\n");
+        }
         for (DimensionReport dimension : report.dimensions()) {
             out.append('\n').append(dimension(dimension));
         }

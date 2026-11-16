@@ -48,8 +48,13 @@ class DryRunFixtureTest {
         Expected expected = Expected.compute(ReferenceWorld.read(world), 0, 4, 1, true);
         assertTrue(expected.pruned.size() > 0 && expected.keptByRule.get("K1") > 0);
         assertMatches(expected, readJson(result.jsonReport()));
-        assertEquals(expectedSummary(expected), result.summary());
-        assertTrue(Files.readString(result.textReport()).startsWith(expectedSummary(expected) + "\n"));
+        // The summary counts every dimension; Expected covers the overworld, which is all the
+        // other worlds have. The keep worlds also have End chunks (KeepRulesFixtureTest).
+        if (ReferenceWorld.chunksIn(ReferenceWorld.read(world).end(), "region", false)
+                .isEmpty()) {
+            assertEquals(expectedSummary(expected), result.summary());
+            assertTrue(Files.readString(result.textReport()).startsWith(expectedSummary(expected) + "\n"));
+        }
     }
 
     /**
@@ -107,6 +112,9 @@ class DryRunFixtureTest {
         String[][] names = {
             {"K1", "played in"},
             {"K2", "near players or spawn"},
+            {"K3", "force-loaded"},
+            {"K4", "holding structure starts"},
+            {"K5", "with player entities"},
             {"K6", "in protected areas"},
             {"K7", "unreadable"},
             {"K8", "next to played chunks"}

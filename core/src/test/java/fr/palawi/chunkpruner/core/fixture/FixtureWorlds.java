@@ -14,6 +14,9 @@ import java.util.stream.Stream;
  */
 public final class FixtureWorlds {
     public static final List<String> COMMITTED = List.of("1.20.1", "1.21.1", "26.3");
+    /** The worlds of the keep plan: a village, entities, a forced chunk and a datapack dimension. */
+    public static final List<String> KEEP = List.of("1.20.1-keep", "1.21.1-keep", "26.3-keep");
+
     public static final String LZ4 = "1.21.1-lz4";
 
     private FixtureWorlds() {}
@@ -33,6 +36,9 @@ public final class FixtureWorlds {
         for (String name : COMMITTED) {
             result.add(new Fixture(name, committed(name), true));
         }
+        for (String name : KEEP) {
+            result.add(new Fixture(name, committed(name), true));
+        }
         String generated = System.getProperty("chunkpruner.generatedWorlds");
         if (generated != null && !generated.isBlank()) {
             try (Stream<Path> folders = Files.list(Path.of(generated))) {
@@ -42,7 +48,7 @@ public final class FixtureWorlds {
                     }
                 }
             }
-            if (result.size() == COMMITTED.size()) {
+            if (result.size() == COMMITTED.size() + KEEP.size()) {
                 throw new IllegalStateException("no generated world with a level.dat in " + generated);
             }
         }

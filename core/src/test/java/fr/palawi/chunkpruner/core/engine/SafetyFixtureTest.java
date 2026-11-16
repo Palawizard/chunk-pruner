@@ -97,23 +97,29 @@ class SafetyFixtureTest {
         }
     }
 
-    /** S11: free space is injected; the threshold is the size of the files to change plus 10 percent. */
+    /**
+     * S11: free space is injected. The threshold is the size of the files to change (the backup
+     * copies them) plus the largest of them (the rewrite writes it again before it moves it over),
+     * plus 10 percent.
+     */
     @Test
     void pruneStopsBeforeAnyChangeWhenSpaceIsShort() throws Exception {
         Path world = world();
         ReferenceWorld reference = ReferenceWorld.read(world);
         Expected expected = Expected.compute(reference, 0, 4, 1, true);
         long toChange = 0;
+        long largest = 0;
         for (String storage : ReferenceWorld.STORAGES) {
             for (Path file : reference.files(storage)) {
                 boolean changes = ReferenceWorld.chunks(storage, file, true).stream()
                         .anyMatch(c -> expected.pruned.contains(c.key()));
                 if (changes) {
                     toChange += Files.size(file);
+                    largest = Math.max(largest, Files.size(file));
                 }
             }
         }
-        long required = (toChange * 110 + 99) / 100;
+        long required = ((toChange + largest) * 110 + 99) / 100;
         Map<String, String> before = ReferenceWorld.checksums(world);
 
         RunSettings tooSmall = settings(world, Config.defaults(), RunMode.PRUNE).withFreeSpace(folder -> required - 1);
@@ -131,14 +137,26 @@ class SafetyFixtureTest {
         assertEquals(expected.pruned.size(), pruned.report().pruned());
     }
 
+    /** E3 prunes without --dry-run, after the backup, and says where the backup is. */
     @Test
-    void commandLineRefusesToPruneWithoutDryRun() throws Exception {
+    void commandLinePrunesWithABackup() throws Exception {
         Path world = world();
-        Map<String, String> before = ReferenceWorld.checksums(world);
-        assertEquals(CommandLine.EXIT_REFUSED, cli("--world", world.toString()));
-        assertTrue(err.toString(StandardCharsets.UTF_8).contains("Pruning is not available in this version"));
-        assertEquals(before, ReferenceWorld.checksums(world));
-        assertFalse(Files.exists(ReportFiles.folder(world)));
+        Expected expected = Expected.compute(ReferenceWorld.read(world), 0, 4, 1, true);
+        assertEquals(CommandLine.EXIT_OK, cli("--world", world.toString()), err.toString(StandardCharsets.UTF_8));
+        String output = out.toString(StandardCharsets.UTF_8);
+        assertTrue(output.contains("The changed files were backed up to "), output);
+        assertEquals(expected.pruned.size(), chunksMissing(world), "the expected chunks are gone");
+        assertTrue(Files.isDirectory(world.resolve("chunkpruner/backups")));
+        assertFalse(Files.exists(world.resolve("chunkpruner/journal.json")));
+        assertTrue(Files.exists(ReportFiles.folder(world)));
+    }
+
+    private long chunksMissing(Path world) throws Exception {
+        long now = ReferenceWorld.read(world).chunks("region", true).size();
+        return ReferenceWorld.read(FixtureWorlds.committed("1.21.1"))
+                        .chunks("region", true)
+                        .size()
+                - now;
     }
 
     @Test

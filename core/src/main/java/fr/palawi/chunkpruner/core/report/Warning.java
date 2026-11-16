@@ -10,6 +10,7 @@ public record Warning(String type, String dimension, String file, Integer chunkX
     public static final String UNREADABLE_REGION = "unreadable-region";
     public static final String EXTERNAL_CHUNK = "external-chunk";
     public static final String LOW_DISK_SPACE = "low-disk-space";
-    public static final String RULES_NOT_CHECKED = "rules-not-checked";
+    public static final String FORCED_CHUNKS_UNKNOWN = "forced-chunks-unknown";
+    public static final String RESUMED = "resumed";
     public static final String MORE_WARNINGS = "more-warnings";
 }

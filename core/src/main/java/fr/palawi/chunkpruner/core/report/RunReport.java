@@ -8,7 +8,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Result of one run (SPEC section 6). */
+/**
+ * Result of one run (SPEC section 6). {@code backup} is the backup folder of a prune run, relative
+ * to the world, or null (dry run, nothing to change, or backups turned off).
+ */
 public record RunReport(
         String runId,
         String mode,
@@ -21,6 +24,7 @@ public record RunReport(
         String modVersion,
         boolean lz4Available,
         Map<String, Object> config,
+        String backup,
         List<DimensionReport> dimensions,
         List<Warning> warnings) {
     public RunReport {

@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,7 +44,8 @@ public final class WorldData {
             "Data.Player.SpawnZ",
             "Data.Player.SpawnDimension",
             "Data.Player.respawn.dimension",
-            "Data.Player.respawn.pos");
+            "Data.Player.respawn.pos",
+            "Data.Player.UUID");
     private static final Set<String> PLAYER_KEYS =
             Set.of("Pos", "Dimension", "SpawnX", "SpawnZ", "SpawnDimension", "respawn.dimension", "respawn.pos");
 
@@ -51,12 +53,14 @@ public final class WorldData {
     private final String versionName;
     private final WorldLayout layout;
     private final List<ProtectedPoint> points;
+    private final Set<UUID> players;
 
-    private WorldData(int dataVersion, String versionName, List<ProtectedPoint> points) {
+    private WorldData(int dataVersion, String versionName, List<ProtectedPoint> points, Set<UUID> players) {
         this.dataVersion = dataVersion;
         this.versionName = versionName;
         this.layout = WorldLayout.forDataVersion(dataVersion);
         this.points = List.copyOf(points);
+        this.players = Set.copyOf(players);
     }
 
     public static WorldData read(Path world) throws WorldException {
@@ -68,22 +72,29 @@ public final class WorldData {
         List<ProtectedPoint> points = new ArrayList<>();
         addSpawn(points, level);
         addPlayer(points, level, "Data.Player.", "host player in level.dat");
+        Set<UUID> players = new HashSet<>();
+        if (level.get("Data.Player.UUID") instanceof int[] uuid && uuid.length == 4) {
+            players.add(new UUID(
+                    (long) uuid[0] << 32 | uuid[1] & 0xFFFFFFFFL, (long) uuid[2] << 32 | uuid[3] & 0xFFFFFFFFL));
+        }
         WorldLayout layout = WorldLayout.forDataVersion(dataVersion.intValue());
-        Path players = layout.playerDataFolder(world);
-        if (Files.isDirectory(players)) {
-            try (DirectoryStream<Path> files = Files.newDirectoryStream(players, "*.dat")) {
+        Path playerFolder = layout.playerDataFolder(world);
+        if (Files.isDirectory(playerFolder)) {
+            try (DirectoryStream<Path> files = Files.newDirectoryStream(playerFolder, "*.dat")) {
                 for (Path file : files) {
                     String name = file.getFileName().toString();
-                    if (isUuid(name.substring(0, name.length() - 4))) {
+                    String id = name.substring(0, name.length() - 4);
+                    if (isUuid(id)) {
                         addPlayer(points, readGzip(file, PLAYER_KEYS), "", "player " + name);
+                        players.add(UUID.fromString(id));
                     }
                 }
             } catch (IOException e) {
-                throw new WorldException("cannot list the player files in " + players, e);
+                throw new WorldException("cannot list the player files in " + playerFolder, e);
             }
         }
         Object name = level.get("Data.Version.Name");
-        return new WorldData(dataVersion.intValue(), name instanceof String s ? s : null, points);
+        return new WorldData(dataVersion.intValue(), name instanceof String s ? s : null, points, players);
     }
 
     private static void addSpawn(List<ProtectedPoint> points, Map<String, Object> level) {
@@ -163,5 +174,10 @@ public final class WorldData {
 
     public List<ProtectedPoint> protectedPoints() {
         return points;
+    }
+
+    /** The UUIDs of the player files and of the host player in {@code level.dat}. */
+    public Set<UUID> players() {
+        return players;
     }
 }

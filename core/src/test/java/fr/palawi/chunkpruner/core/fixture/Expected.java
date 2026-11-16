@@ -34,33 +34,105 @@ public final class Expected {
     public static Expected compute(
             ReferenceWorld world, long threshold, int radius, int neighborRadius, int[][] areas, boolean lz4)
             throws IOException {
+        return compute(world, new Rules(threshold, radius, neighborRadius, areas, true, true, true), lz4);
+    }
+
+    /**
+     * The settings of the rules, as in the config of SPEC section 9. A negative {@code radius}
+     * leaves K2 out, which the config cannot do, for the measurements.
+     */
+    public record Rules(
+            long threshold,
+            int radius,
+            int neighborRadius,
+            int[][] areas,
+            boolean forced,
+            boolean structures,
+            boolean entities) {
+        public static Rules defaults() {
+            return new Rules(0, 4, 1, new int[0][], true, true, true);
+        }
+
+        public Rules withK3K4K5(boolean k3, boolean k4, boolean k5) {
+            return new Rules(threshold, radius, neighborRadius, areas, k3, k4, k5);
+        }
+    }
+
+    public static Expected compute(ReferenceWorld world, Rules rules, boolean lz4) throws IOException {
         Expected e = new Expected();
-        for (String rule : List.of("K1", "K2", "K6", "K7", "K8")) {
+        for (String rule : List.of("K1", "K2", "K3", "K4", "K5", "K6", "K7", "K8")) {
             e.keptByRule.put(rule, 0L);
         }
         List<Chunk> region = world.chunks("region", lz4);
+        Map<Long, Chunk> entities = new HashMap<>();
+        for (Chunk c : world.chunks("entities", lz4)) {
+            entities.put(c.key(), c);
+        }
         Set<Long> k1 = new HashSet<>();
         for (Chunk c : region) {
-            if (c.readable() && c.inhabitedTime() > threshold && positionMatches(c)) {
+            if (c.readable() && c.inhabitedTime() > rules.threshold() && positionMatches(c)) {
                 k1.add(c.key());
             }
         }
+        Set<Long> forced = rules.forced() ? world.forcedChunks() : Set.of();
         Set<String> notRewritable = notRewritableFiles(world);
+        Map<Long, String> withoutK4 = new HashMap<>();
+        Set<Long> unreadable = new HashSet<>();
+        Set<Long> regionUnreadable = new HashSet<>();
+        Set<Long> k5 = new HashSet<>();
         for (Chunk c : region) {
             boolean readable = c.readable() && positionMatches(c);
+            if (!readable) {
+                regionUnreadable.add(c.key());
+            }
+            Chunk entityChunk = entities.get(c.key());
+            if (readable && rules.entities() && entityChunk != null) {
+                if (!ExpectedEntities.readable(entityChunk)) {
+                    readable = false;
+                } else if (ExpectedEntities.keeps(entityChunk, c, world.players(), "minecraft:overworld")) {
+                    k5.add(c.key());
+                }
+            }
+            if (!readable) {
+                unreadable.add(c.key());
+            }
             String rule = null;
-            if (readable && k1.contains(c.key())) {
+            if (k1.contains(c.key())) {
                 rule = "K1";
-            } else if (nearPoint(world, c, radius)) {
+            } else if (rules.radius() >= 0 && nearPoint(world, c, rules.radius())) {
                 rule = "K2";
-            } else if (inArea(areas, c)) {
+            } else if (forced.contains(c.key())) {
+                rule = "K3";
+            } else if (k5.contains(c.key())) {
+                rule = "K5";
+            } else if (inArea(rules.areas(), c)) {
                 rule = "K6";
-            } else if (!readable) {
+            } else if (unreadable.contains(c.key())) {
                 rule = "K7";
-            } else if (neighborRadius > 0 && nearPlayed(k1, c, neighborRadius)) {
+            } else if (rules.neighborRadius() > 0 && nearPlayed(k1, c, rules.neighborRadius())) {
                 rule = "K8";
             } else if (notRewritable.contains(c.file())) {
                 rule = "K7";
+            }
+            withoutK4.put(c.key(), rule);
+        }
+        Set<Long> unknown = new HashSet<>(regionUnreadable);
+        for (Path file : world.files("region")) {
+            long size = Files.size(file);
+            if (size > 0 && size < 8192) {
+                String[] parts = file.getFileName().toString().split("\\.");
+                int rx = Integer.parseInt(parts[1]);
+                int rz = Integer.parseInt(parts[2]);
+                for (int i = 0; i < 1024; i++) {
+                    unknown.add(ReferenceWorld.key(rx * 32 + (i & 31), rz * 32 + (i >> 5)));
+                }
+            }
+        }
+        Set<Long> k4 = rules.structures() ? referencedStarts(region, regionUnreadable, unknown, withoutK4) : Set.of();
+        for (Chunk c : region) {
+            String rule = withoutK4.get(c.key());
+            if (k4.contains(c.key()) && (rule == null || rule.compareTo("K4") > 0)) {
+                rule = "K4";
             }
             if (rule == null) {
                 e.pruned.add(c.key());
@@ -73,6 +145,68 @@ public final class Expected {
             e.storages.put(storage, sizes(world, storage, e.pruned, lz4));
         }
         return e;
+    }
+
+    /**
+     * Start chunks referenced, for the structure that starts there, by another kept chunk, or
+     * lying within 8 chunks of a chunk whose references cannot be read; a chunk found this way
+     * counts as kept in turn. Computed again until nothing changes.
+     */
+    private static Set<Long> referencedStarts(
+            List<Chunk> region, Set<Long> unreadable, Set<Long> unknown, Map<Long, String> rules) {
+        Map<Long, Map<String, Object>> structures = new HashMap<>();
+        for (Chunk c : region) {
+            if (!unreadable.contains(c.key()) && ReferenceNbt.compound(c.nbt(), "structures") != null) {
+                structures.put(c.key(), ReferenceNbt.compound(c.nbt(), "structures"));
+            }
+        }
+        Set<Long> referenced = new HashSet<>();
+        for (Map.Entry<Long, Map<String, Object>> chunk : structures.entrySet()) {
+            Map<String, Object> starts = ReferenceNbt.compound(chunk.getValue(), "starts");
+            boolean hasStart = starts != null
+                    && starts.values().stream()
+                            .anyMatch(v -> v instanceof Map<?, ?> m && !"INVALID".equals(m.get("id")));
+            int x = (int) (chunk.getKey() >> 32);
+            int z = (int) (long) chunk.getKey();
+            for (int dx = -8; dx <= 8 && hasStart; dx++) {
+                for (int dz = -8; dz <= 8; dz++) {
+                    if ((dx != 0 || dz != 0) && unknown.contains(ReferenceWorld.key(x + dx, z + dz))) {
+                        referenced.add(chunk.getKey());
+                    }
+                }
+            }
+        }
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Map.Entry<Long, Map<String, Object>> from : structures.entrySet()) {
+                if (rules.get(from.getKey()) == null && !referenced.contains(from.getKey())) {
+                    continue;
+                }
+                Map<String, Object> refs = ReferenceNbt.compound(from.getValue(), "References");
+                if (refs == null) {
+                    continue;
+                }
+                for (Map.Entry<String, Object> ref : refs.entrySet()) {
+                    for (long target : (long[]) ref.getValue()) {
+                        int x = (int) target;
+                        int z = (int) (target >> 32);
+                        long key = (long) x << 32 | (z & 0xFFFFFFFFL);
+                        if (key != from.getKey()
+                                && startsThere(structures.get(key), ref.getKey())
+                                && referenced.add(key)) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        return referenced;
+    }
+
+    private static boolean startsThere(Map<String, Object> structures, String id) {
+        Map<String, Object> starts = structures == null ? null : ReferenceNbt.compound(structures, "starts");
+        return starts != null && starts.get(id) instanceof Map<?, ?> start && !"INVALID".equals(start.get("id"));
     }
 
     private static boolean positionMatches(Chunk c) {
