@@ -140,7 +140,8 @@ public final class CommandLine {
                 + nl
                 + "Without --dry-run the chunks are removed. Every changed file is first copied to" + nl
                 + "<world>/chunkpruner/backups/<run>, and chunkpruner/journal.json lets an interrupted" + nl
-                + "run finish on the next start. Copy a backup back over the world to undo a run." + nl
+                + "run finish: while it exists, any run, a dry run too, finishes that run first and stops." + nl
+                + "Copy a backup back over the world to undo a run." + nl
                 + nl
                 + "Exit codes: 0 done, 1 error, 2 bad options, 3 refused (world in use, or not enough" + nl
                 + "free disk space)." + nl;
