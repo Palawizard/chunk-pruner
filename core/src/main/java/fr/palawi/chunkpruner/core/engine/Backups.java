@@ -79,7 +79,9 @@ final class Backups {
             }
         }
         return "To undo this run, with the world closed, copy these folders back into the world folder,"
-                + " replacing the files there:\n" + String.join("\n", lines) + "\n";
+                + " replacing the files there:\n" + String.join("\n", lines) + "\n"
+                + "Only the files the run changed are here. If the world was played after the run, what the game"
+                + " wrote since in other files stays.\n";
     }
 
     private static void copyAll(Path world, Path folder, List<RegionPlan> regions) throws IOException {

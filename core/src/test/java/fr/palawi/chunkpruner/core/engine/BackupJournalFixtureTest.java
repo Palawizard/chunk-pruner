@@ -184,6 +184,17 @@ class BackupJournalFixtureTest {
         assertEquals(before, ReferenceWorld.checksums(world), "nothing more changed, the journal is kept");
     }
 
+    /** A journal that cannot be read stops every run, with the way out in the message. */
+    @Test
+    void anUnreadableJournalSaysHowToLeave() throws Exception {
+        Path world = world("world");
+        Files.createDirectories(world.resolve("chunkpruner"));
+        Files.writeString(world.resolve("chunkpruner/journal.json"), "{\"format\": 1, \"runId\": \"x\"");
+        UnfinishedRunException stopped = assertThrows(
+                UnfinishedRunException.class, () -> Engine.run(settings(world, Config.defaults(), RunMode.DRY_RUN)));
+        assertTrue(stopped.getMessage().contains("delete chunkpruner/journal.json and chunkpruner/journal-plan.json"));
+    }
+
     /** A plan without its journal comes from a run stopped before its first rewrite. */
     @Test
     void aPlanWithoutAJournalIsDiscarded() throws Exception {

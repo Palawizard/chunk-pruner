@@ -7,6 +7,7 @@ import fr.palawi.chunkpruner.core.engine.NotEnoughSpaceException;
 import fr.palawi.chunkpruner.core.engine.RunContext;
 import fr.palawi.chunkpruner.core.engine.RunMode;
 import fr.palawi.chunkpruner.core.engine.RunSettings;
+import fr.palawi.chunkpruner.core.engine.UnfinishedRunException;
 import fr.palawi.chunkpruner.core.world.WorldException;
 import fr.palawi.chunkpruner.core.world.WorldInUseException;
 import java.io.IOException;
@@ -115,7 +116,7 @@ public final class CommandLine {
             return EXIT_ERROR;
         } catch (IOException | RuntimeException e) {
             err.println("The run failed: " + e.getMessage());
-            if (hasJournal(world) && !String.valueOf(e.getMessage()).contains("journal.json")) {
+            if (hasJournal(world) && !(e instanceof UnfinishedRunException)) {
                 err.println("The world has an unfinished prune run (chunkpruner/journal.json): the next run tries to"
                         + " finish it before anything else.");
             }

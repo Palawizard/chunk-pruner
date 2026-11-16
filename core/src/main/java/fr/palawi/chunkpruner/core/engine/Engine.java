@@ -56,8 +56,8 @@ public final class Engine {
         }
         Instant started = settings.clock().instant();
         long startNanos = System.nanoTime();
-        boolean rewrites = (settings.mode() == RunMode.PRUNE || Journal.exists(world))
-                && Files.isRegularFile(world.resolve("level.dat"));
+        boolean rewrites = Journal.exists(world)
+                || settings.mode() == RunMode.PRUNE && Files.isRegularFile(world.resolve("level.dat"));
         try (SessionLock lock = settings.takeSessionLock() ? SessionLock.acquire(world, rewrites) : null) {
             if (Journal.exists(world)) {
                 return resume(world, settings);
@@ -112,7 +112,16 @@ public final class Engine {
 
     /** SPEC section 4: the pending regions are finished with the recorded decisions, then reported. */
     private static RunResult resume(Path world, RunSettings settings) throws IOException {
-        Journal.Loaded loaded = Journal.read(world);
+        Journal.Loaded loaded;
+        try {
+            loaded = Journal.read(world);
+        } catch (IOException e) {
+            throw new UnfinishedRunException(
+                    e.getMessage() + " The next run tries again. To undo the run, follow the"
+                            + " restore.txt of its folder in chunkpruner/backups, if it has one. To give up the run, delete"
+                            + " chunkpruner/journal.json and chunkpruner/journal-plan.json.",
+                    e);
+        }
         Journal.Plan plan = loaded.plan();
         Set<Integer> done = new HashSet<>(loaded.done());
         applyAll(world, plan, done, settings.listener());
@@ -157,7 +166,7 @@ public final class Engine {
             try {
                 Rewrite.apply(world, region, listener);
             } catch (IOException e) {
-                throw new IOException(e.getMessage() + " " + way(plan), e);
+                throw new UnfinishedRunException(e.getMessage() + " " + way(plan), e);
             }
             done.add(i);
             Journal.markDone(world, plan, done);
