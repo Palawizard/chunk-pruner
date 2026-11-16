@@ -181,10 +181,23 @@ final class Journal {
         }
     }
 
-    /** Deletes the journal, then the plan. */
+    /**
+     * Deletes the journal, then the plan, then the {@code .tmp} files a process killed while it
+     * wrote one of them, or a report, may have left in {@code chunkpruner/}.
+     */
     static void finish(Path world) throws IOException {
         Files.deleteIfExists(file(world));
         Files.deleteIfExists(planFile(world));
+        Path folder = world.resolve("chunkpruner");
+        for (Path dir : List.of(folder, folder.resolve("reports"))) {
+            if (Files.isDirectory(dir)) {
+                try (java.nio.file.DirectoryStream<Path> temps = Files.newDirectoryStream(dir, "*.tmp")) {
+                    for (Path temp : temps) {
+                        Files.deleteIfExists(temp);
+                    }
+                }
+            }
+        }
     }
 
     /** A plan left without its journal: written by a run stopped before its first rewrite. */

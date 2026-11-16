@@ -192,6 +192,11 @@ class NbtFieldReaderTest {
         assertThrows(
                 NbtFormatException.class,
                 () -> NbtFieldReader.read(new ByteArrayInputStream(nested(512, false)), Set.of("a")));
+        assertTrue(NbtFieldReader.read(new ByteArrayInputStream(nested(511, true)), Set.of("a"))
+                .containsKey("a"));
+        assertThrows(
+                NbtFormatException.class,
+                () -> NbtFieldReader.read(new ByteArrayInputStream(nested(512, true)), Set.of("a")));
     }
 
     /**

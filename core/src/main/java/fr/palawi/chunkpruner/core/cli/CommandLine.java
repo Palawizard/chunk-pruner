@@ -11,6 +11,7 @@ import fr.palawi.chunkpruner.core.world.WorldException;
 import fr.palawi.chunkpruner.core.world.WorldInUseException;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 
@@ -111,12 +112,23 @@ public final class CommandLine {
         } catch (WorldException e) {
             err.println(e.getMessage());
             return EXIT_ERROR;
-        } catch (IOException | InvalidPathException e) {
-            err.println((mode == RunMode.DRY_RUN ? "The dry run" : "The prune run") + " failed: " + e.getMessage());
-            if (mode == RunMode.PRUNE) {
-                err.println("If it stopped while rewriting, the next run finishes it from chunkpruner/journal.json.");
+        } catch (IOException | RuntimeException e) {
+            err.println("The run failed: " + e.getMessage());
+            if (hasJournal(world)) {
+                err.println("The world has an unfinished prune run (chunkpruner/journal.json). The next run tries to"
+                        + " finish it before anything else. If it keeps failing, restore the backup named in"
+                        + " chunkpruner/journal-plan.json, if there is one, then delete chunkpruner/journal.json"
+                        + " and chunkpruner/journal-plan.json.");
             }
             return EXIT_ERROR;
+        }
+    }
+
+    private static boolean hasJournal(String world) {
+        try {
+            return Files.exists(Path.of(world).resolve("chunkpruner").resolve("journal.json"));
+        } catch (InvalidPathException e) {
+            return false;
         }
     }
 

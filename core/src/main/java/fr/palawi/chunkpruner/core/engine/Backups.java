@@ -31,10 +31,26 @@ final class Backups {
     /**
      * Copies every file of the plan, with the external {@code .mcc} files of the chunks that go,
      * and checks each copy's size. Returns the folder, relative to the world. Any failure stops the
-     * run before the first rewrite.
+     * run before the first rewrite, and the partial copy is deleted.
      */
     static String create(Path world, String runId, List<RegionPlan> regions) throws IOException {
         Path folder = root(world).resolve(runId);
+        try {
+            copyAll(world, folder, regions);
+        } catch (IOException | RuntimeException e) {
+            if (Files.isDirectory(folder)) {
+                try {
+                    deleteTree(folder);
+                } catch (IOException cleanup) {
+                    e.addSuppressed(cleanup);
+                }
+            }
+            throw e;
+        }
+        return world.relativize(folder).toString().replace('\\', '/');
+    }
+
+    private static void copyAll(Path world, Path folder, List<RegionPlan> regions) throws IOException {
         for (RegionPlan region : regions) {
             DimensionId dimension = DimensionId.parse(region.dimension());
             Path target = folder.resolve(dimension.namespace()).resolve(dimension.path());
@@ -50,11 +66,14 @@ final class Backups {
                 }
             }
         }
-        return world.relativize(folder).toString().replace('\\', '/');
     }
 
-    /** Keeps the {@code keep} newest run backups and deletes the older ones. */
-    static List<String> applyRetention(Path world, int keep) throws IOException {
+    /**
+     * Keeps the backup of the run that just finished ({@code current}, or null when it made none)
+     * and the newest others up to {@code keep} backups in all, and deletes the rest. The current
+     * backup is never deleted, even with {@code keep} 0 or a clock set back.
+     */
+    static List<String> applyRetention(Path world, int keep, String current) throws IOException {
         Path root = root(world);
         List<String> deleted = new ArrayList<>();
         if (!Files.isDirectory(root)) {
@@ -64,7 +83,7 @@ final class Backups {
         try (DirectoryStream<Path> folders = Files.newDirectoryStream(root)) {
             for (Path folder : folders) {
                 String name = folder.getFileName().toString();
-                if (Files.isDirectory(folder) && RUN_FOLDER.matcher(name).matches()) {
+                if (Files.isDirectory(folder) && RUN_FOLDER.matcher(name).matches() && !name.equals(current)) {
                     runs.add(name);
                 }
             }
@@ -73,7 +92,9 @@ final class Backups {
             String n = part(name, 2);
             return n == null ? 1 : Integer.parseInt(n);
         }));
-        for (int i = 0; i < runs.size() - keep; i++) {
+        boolean currentKept = current != null && Files.isDirectory(root.resolve(current));
+        int keepOthers = Math.max(0, keep - (currentKept ? 1 : 0));
+        for (int i = 0; i < runs.size() - keepOthers; i++) {
             deleteTree(root.resolve(runs.get(i)));
             deleted.add(runs.get(i));
         }

@@ -27,8 +27,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * S2 on a temporary copy, by calling the engine directly (the command line refuses to prune in
- * this version): exactly the expected chunks leave {@code region}, {@code entities} and
+ * S2 on a temporary copy, by calling the engine directly: exactly the expected chunks leave {@code region}, {@code entities} and
  * {@code poi}, every kept chunk is byte for byte what it was, and the rest of the world is
  * untouched. Opening the pruned world on a real server is {@code scripts/check-pruned-world.ps1}.
  */

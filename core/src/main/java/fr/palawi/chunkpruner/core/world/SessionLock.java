@@ -13,7 +13,9 @@ import java.nio.file.StandardOpenOption;
  * The world's {@code session.lock}, taken the way the game takes it ({@code DirectoryLock}: an
  * exclusive {@link FileChannel#tryLock()} on the file). While a server or a client has the world
  * open, the lock is held and {@link #acquire} refuses. Taking it does not change the file. When
- * the file does not exist, nothing is locked and nothing is created.
+ * the file does not exist, a dry run locks nothing and creates nothing; a run that rewrites files
+ * creates it the way the game does (the snowman character, then the lock), so the game cannot open
+ * the world while the files change.
  */
 public final class SessionLock implements AutoCloseable {
     public static final String FILE_NAME = "session.lock";
@@ -28,13 +30,24 @@ public final class SessionLock implements AutoCloseable {
 
     /** Holds the lock until {@link #close()}; throws when another process holds it. */
     public static SessionLock acquire(Path world) throws WorldException {
+        return acquire(world, false);
+    }
+
+    /** {@code create}: create a missing file, as the game does, and lock it. */
+    public static SessionLock acquire(Path world, boolean create) throws WorldException {
         Path file = world.resolve(FILE_NAME);
-        if (!Files.exists(file)) {
+        boolean exists = Files.exists(file);
+        if (!exists && !create) {
             return new SessionLock(null, null);
         }
         FileChannel channel = null;
         try {
-            channel = FileChannel.open(file, StandardOpenOption.WRITE);
+            channel = exists
+                    ? FileChannel.open(file, StandardOpenOption.WRITE)
+                    : FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            if (!exists) {
+                channel.write(java.nio.ByteBuffer.wrap("\u2603".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            }
             FileLock lock = channel.tryLock();
             if (lock == null) {
                 channel.close();

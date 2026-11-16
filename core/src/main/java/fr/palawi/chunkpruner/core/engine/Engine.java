@@ -56,7 +56,8 @@ public final class Engine {
         }
         Instant started = settings.clock().instant();
         long startNanos = System.nanoTime();
-        try (SessionLock lock = settings.takeSessionLock() ? SessionLock.acquire(world) : null) {
+        boolean rewrites = settings.mode() == RunMode.PRUNE || Journal.exists(world);
+        try (SessionLock lock = settings.takeSessionLock() ? SessionLock.acquire(world, rewrites) : null) {
             if (Journal.exists(world)) {
                 return resume(world, settings);
             }
@@ -84,7 +85,11 @@ public final class Engine {
             String runId = runId(world, started, settings.mode());
             if (settings.mode() == RunMode.DRY_RUN || regions.isEmpty()) {
                 RunReport report = report(runId, settings, started, startNanos, data, null, dimensions, warnings);
-                return written(world, report);
+                RunResult result = written(world, report);
+                if (settings.mode() == RunMode.PRUNE) {
+                    Backups.applyRetention(world, settings.config().backupRetention(), null);
+                }
+                return result;
             }
             String backup = null;
             if (settings.config().backup()) {
@@ -99,7 +104,7 @@ public final class Engine {
             RunReport report = report(runId, settings, started, startNanos, data, backup, dimensions, warnings);
             RunResult result = written(world, report);
             Journal.finish(world);
-            Backups.applyRetention(world, settings.config().backupRetention());
+            Backups.applyRetention(world, settings.config().backupRetention(), runId);
             return result;
         }
     }
@@ -129,9 +134,12 @@ public final class Engine {
         String text = plan.reportText() + "\nThis run was interrupted after "
                 + loaded.done().size() + " of " + plan.regions().size() + " regions, and finished from its journal on "
                 + finishedAt + ".\n";
-        Path json = ReportFiles.write(world, plan.runId(), Json.write(report), text);
+        Path json = ReportFiles.folder(world).resolve(plan.runId() + ".json");
+        if (loaded.done().size() < plan.regions().size() || !Files.exists(json)) {
+            json = ReportFiles.write(world, plan.runId(), Json.write(report), text);
+        }
         Journal.finish(world);
-        Backups.applyRetention(world, settings.config().backupRetention());
+        Backups.applyRetention(world, settings.config().backupRetention(), plan.runId());
         String summary = text.lines().findFirst().orElse("");
         return new RunResult(null, json, json.resolveSibling(plan.runId() + ".txt"), summary, true);
     }
@@ -143,12 +151,26 @@ public final class Engine {
                 continue;
             }
             Journal.RegionPlan region = plan.regions().get(i);
-            Rewrite.apply(world, region, listener);
+            try {
+                Rewrite.apply(world, region, listener);
+            } catch (IOException e) {
+                throw new IOException(e.getMessage() + " " + way(plan), e);
+            }
             done.add(i);
             Journal.markDone(world, plan, done);
             listener.event(
                     RunListener.REGION_DONE, world.resolve(region.folder()).resolve(region.file()));
         }
+    }
+
+    /** How to leave an unfinished run that cannot go on (SPEC section 4). */
+    private static String way(Journal.Plan plan) {
+        String restore = plan.backup() == null
+                ? "This run made no backup (backup is false in the config)."
+                : "To undo the run, copy the files of " + plan.backup() + " back over the world.";
+        return "The next run tries again to finish this one. " + restore + " To give up the run, delete"
+                + " chunkpruner/journal.json and chunkpruner/journal-plan.json; the regions already rewritten stay"
+                + " rewritten.";
     }
 
     private static Journal.RegionPlan plan(DimensionId id, String relative, Path folder, RegionPlan plan)

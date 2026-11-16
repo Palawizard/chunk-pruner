@@ -24,15 +24,20 @@ import java.util.zip.GZIPInputStream;
  *   <li>From data version 4772 (26.3): {@code <dimension>/data/minecraft/chunk_tickets.dat},
  *       written by {@code TicketStorage}, with every saved ticket in {@code data.tickets}: a
  *       {@code chunk_pos} int array of two and a {@code type} such as {@code minecraft:forced}.
+ *       NeoForge adds {@code data.neo_ticket_data} ({@code ForcedChunkManager.OwnedChunks}): a list
+ *       of controllers, each with {@code block_chunks} and {@code entity_chunks}, whose
+ *       {@code tickets} hold the chunks in the long lists {@code normal} and
+ *       {@code natural_spawning}.
  * </ul>
  *
  * <p>Chunk positions are packed as in {@code ChunkPos.pack}: x in the low 32 bits, z in the high
- * ones. When the file cannot be read, or holds data this version does not know (a mod's own
- * fields next to {@code tickets}), the forced chunks are unknown and every chunk of the dimension
- * counts as forced.
+ * ones. When the file cannot be read, or holds data this version does not know, the forced chunks
+ * are unknown and every chunk of the dimension counts as forced.
  */
 public final class ForcedChunks {
     private static final String DATA = "data";
+    private static final Set<String> LEGACY_KEYS = Set.of("Forced", "ForgeForced", "ModForced");
+    private static final Set<String> TICKET_KEYS = Set.of("tickets", "neo_ticket_data");
 
     private final Set<Long> chunks;
     private final String unknownReason;
@@ -69,6 +74,12 @@ public final class ForcedChunks {
             return unknown(file.getFileName() + " has no data compound");
         }
         Set<Long> found = new HashSet<>();
+        Set<String> known = layout == WorldLayout.LEGACY ? LEGACY_KEYS : TICKET_KEYS;
+        for (Object key : map.keySet()) {
+            if (!known.contains(key)) {
+                return unknown(file.getFileName() + " has data this version does not read (" + key + ")");
+            }
+        }
         if (layout == WorldLayout.LEGACY) {
             if (map.get("Forced") instanceof long[] forced) {
                 for (long chunk : forced) {
@@ -79,10 +90,8 @@ public final class ForcedChunks {
             collectChunkLongs(map.get("ModForced"), found);
             return new ForcedChunks(Set.copyOf(found), null);
         }
-        for (Object key : map.keySet()) {
-            if (!"tickets".equals(key)) {
-                return unknown(file.getFileName() + " has data this version does not read (" + key + ")");
-            }
+        if (map.containsKey("neo_ticket_data") && !collectTicketSets(map.get("neo_ticket_data"), found)) {
+            return unknown(file.getFileName() + " has a neo_ticket_data entry this version does not read");
         }
         if (map.get("tickets") instanceof List<?> tickets) {
             for (Object ticket : tickets) {
@@ -93,6 +102,60 @@ public final class ForcedChunks {
             }
         }
         return new ForcedChunks(Set.copyOf(found), null);
+    }
+
+    /** The chunks of every {@code normal} and {@code natural_spawning} list; false on any other shape. */
+    private static boolean collectTicketSets(Object value, Set<Long> found) {
+        if (!(value instanceof List<?> controllers)) {
+            return false;
+        }
+        for (Object controller : controllers) {
+            if (!(controller instanceof Map<?, ?> owned)) {
+                return false;
+            }
+            for (String kind : List.of("block_chunks", "entity_chunks")) {
+                Object entries = owned.get(kind);
+                if (entries == null) {
+                    continue;
+                }
+                if (!(entries instanceof List<?> list)) {
+                    return false;
+                }
+                for (Object entry : list) {
+                    if (!(entry instanceof Map<?, ?> e) || !(e.get("tickets") instanceof Map<?, ?> tickets)) {
+                        return false;
+                    }
+                    for (String set : List.of("normal", "natural_spawning")) {
+                        if (!addLongs(tickets.get(set), found)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean addLongs(Object value, Set<Long> found) {
+        if (value == null) {
+            return true;
+        }
+        if (value instanceof long[] longs) {
+            for (long chunk : longs) {
+                found.add(chunk);
+            }
+            return true;
+        }
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (!(item instanceof Long chunk)) {
+                    return false;
+                }
+                found.add(chunk);
+            }
+            return true;
+        }
+        return false;
     }
 
     private static void collectChunkLongs(Object value, Set<Long> found) {

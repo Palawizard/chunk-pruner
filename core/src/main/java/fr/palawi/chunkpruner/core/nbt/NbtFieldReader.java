@@ -24,8 +24,8 @@ import java.util.Set;
  * as {@link String}, int arrays as {@code int[]}, long arrays as {@code long[]}, lists as {@code
  * List} and compounds as {@code Map<String, Object>} of the same kinds of values. Byte arrays are
  * only skipped. A requested list or array, and any list or array inside a requested compound or
- * list, holds at most {@link #MAX_KEPT_ELEMENTS} elements; a longer one is a format error, so the
- * caller never works on part of the data.
+ * list, holds at most {@link #MAX_KEPT_ELEMENTS} elements, and one read keeps at most {@link
+ * #MAX_KEPT_VALUES} values; more is a format error, so the caller never works on part of the data.
  */
 public final class NbtFieldReader {
     public static final int MAX_DEPTH = 512;
@@ -43,11 +43,14 @@ public final class NbtFieldReader {
     private static final int TAG_INT_ARRAY = 11;
     private static final int TAG_LONG_ARRAY = 12;
     public static final int MAX_KEPT_ELEMENTS = 1 << 16;
+    /** Values kept in one read, all requested subtrees together. */
+    public static final int MAX_KEPT_VALUES = 1 << 20;
 
     private final DataInputStream in;
     private final Set<String> wanted;
     private final Set<String> prefixes = new HashSet<>();
     private final Map<String, Object> found = new HashMap<>();
+    private int keptValues;
 
     private NbtFieldReader(InputStream in, Set<String> wanted) {
         this.in = in instanceof DataInputStream data ? data : new DataInputStream(in);
@@ -141,6 +144,9 @@ public final class NbtFieldReader {
 
     /** The whole value of a tag inside a requested compound or list. */
     private Object tree(int type, int depth) throws IOException {
+        if (++keptValues > MAX_KEPT_VALUES) {
+            throw new NbtFormatException("more than " + MAX_KEPT_VALUES + " values to keep");
+        }
         return switch (type) {
             case TAG_BYTE, TAG_SHORT, TAG_INT, TAG_LONG, TAG_FLOAT, TAG_DOUBLE, TAG_STRING -> scalar(type);
             case TAG_BYTE_ARRAY -> {

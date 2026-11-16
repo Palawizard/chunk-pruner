@@ -57,7 +57,7 @@ public final class KeepRules {
     /**
      * What the scan found about one chunk. {@code readable} is false when the chunk, or its
      * {@code entities/} entry while K5 is on, cannot be read or understood; {@code played} is the
-     * K1 result of a readable chunk; {@code forced}, {@code referencedStart} and
+     * K1 result, false when the {@code region/} entry cannot be read; {@code forced}, {@code referencedStart} and
      * {@code playerEntity} are the K3, K4 and K5 findings, whatever the config says.
      */
     public record Facts(
@@ -85,7 +85,7 @@ public final class KeepRules {
     private KeepRule rule(Facts chunk, PlayedChunks playedChunks, boolean withStructures) {
         int x = chunk.chunkX();
         int z = chunk.chunkZ();
-        if (chunk.readable() && chunk.played()) {
+        if (chunk.played()) {
             return KeepRule.K1;
         }
         for (ProtectedPoint point : points) {

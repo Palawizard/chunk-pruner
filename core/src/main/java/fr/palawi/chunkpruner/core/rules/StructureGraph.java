@@ -68,15 +68,28 @@ public final class StructureGraph {
         return result;
     }
 
+    /** How far a reference reaches: the game drops one more than 8 chunks away. */
+    public static final int REFERENCE_RANGE = 8;
+
     /**
      * Computes which start chunks are referenced, for the structure that starts there, by another
      * kept chunk. {@code keptByOtherRules} says whether a chunk is kept by a rule other than K4;
-     * a chunk found here is kept too, so its own references count in turn.
+     * {@code unknown} whether a chunk's references cannot be read (its {@code region/} entry or
+     * file is unreadable). A start within {@link #REFERENCE_RANGE} chunks of an unknown chunk may
+     * be referenced by it, so it is kept. A chunk found here is kept too, so its own references
+     * count in turn.
      */
-    public void resolve(LongPredicate keptByOtherRules) {
+    public void resolve(LongPredicate keptByOtherRules, LongPredicate unknown) {
         referenced.clear();
         Set<Long> kept = new HashSet<>();
         Deque<Long> queue = new ArrayDeque<>();
+        for (Long start : starts.keySet()) {
+            if (nearUnknown(start, unknown)) {
+                referenced.add(start);
+                kept.add(start);
+                queue.add(start);
+            }
+        }
         for (Long chunk : references.keySet()) {
             if (keptByOtherRules.test(chunk)) {
                 kept.add(chunk);
@@ -106,6 +119,19 @@ public final class StructureGraph {
     /** After {@link #resolve}: true when K4 matches the chunk. */
     public boolean isReferencedStart(int chunkX, int chunkZ) {
         return referenced.contains(pack(chunkX, chunkZ));
+    }
+
+    private static boolean nearUnknown(long chunk, LongPredicate unknown) {
+        int x = (int) chunk;
+        int z = (int) (chunk >> 32);
+        for (int dz = -REFERENCE_RANGE; dz <= REFERENCE_RANGE; dz++) {
+            for (int dx = -REFERENCE_RANGE; dx <= REFERENCE_RANGE; dx++) {
+                if ((dx != 0 || dz != 0) && unknown.test(pack(x + dx, z + dz))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean startsHere(long chunk, int structureId) {

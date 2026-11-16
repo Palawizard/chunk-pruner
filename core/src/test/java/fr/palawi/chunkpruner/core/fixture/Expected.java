@@ -97,7 +97,7 @@ public final class Expected {
                 unreadable.add(c.key());
             }
             String rule = null;
-            if (!unreadable.contains(c.key()) && k1.contains(c.key())) {
+            if (k1.contains(c.key())) {
                 rule = "K1";
             } else if (rules.radius() >= 0 && nearPoint(world, c, rules.radius())) {
                 rule = "K2";
@@ -116,7 +116,19 @@ public final class Expected {
             }
             withoutK4.put(c.key(), rule);
         }
-        Set<Long> k4 = rules.structures() ? referencedStarts(region, regionUnreadable, withoutK4) : Set.of();
+        Set<Long> unknown = new HashSet<>(regionUnreadable);
+        for (Path file : world.files("region")) {
+            long size = Files.size(file);
+            if (size > 0 && size < 8192) {
+                String[] parts = file.getFileName().toString().split("\\.");
+                int rx = Integer.parseInt(parts[1]);
+                int rz = Integer.parseInt(parts[2]);
+                for (int i = 0; i < 1024; i++) {
+                    unknown.add(ReferenceWorld.key(rx * 32 + (i & 31), rz * 32 + (i >> 5)));
+                }
+            }
+        }
+        Set<Long> k4 = rules.structures() ? referencedStarts(region, regionUnreadable, unknown, withoutK4) : Set.of();
         for (Chunk c : region) {
             String rule = withoutK4.get(c.key());
             if (k4.contains(c.key()) && (rule == null || rule.compareTo("K4") > 0)) {
@@ -136,10 +148,12 @@ public final class Expected {
     }
 
     /**
-     * Start chunks referenced, for the structure that starts there, by another kept chunk; a
-     * chunk found this way counts as kept in turn. Computed again until nothing changes.
+     * Start chunks referenced, for the structure that starts there, by another kept chunk, or
+     * lying within 8 chunks of a chunk whose references cannot be read; a chunk found this way
+     * counts as kept in turn. Computed again until nothing changes.
      */
-    private static Set<Long> referencedStarts(List<Chunk> region, Set<Long> unreadable, Map<Long, String> rules) {
+    private static Set<Long> referencedStarts(
+            List<Chunk> region, Set<Long> unreadable, Set<Long> unknown, Map<Long, String> rules) {
         Map<Long, Map<String, Object>> structures = new HashMap<>();
         for (Chunk c : region) {
             if (!unreadable.contains(c.key()) && ReferenceNbt.compound(c.nbt(), "structures") != null) {
@@ -147,6 +161,21 @@ public final class Expected {
             }
         }
         Set<Long> referenced = new HashSet<>();
+        for (Map.Entry<Long, Map<String, Object>> chunk : structures.entrySet()) {
+            Map<String, Object> starts = ReferenceNbt.compound(chunk.getValue(), "starts");
+            boolean hasStart = starts != null
+                    && starts.values().stream()
+                            .anyMatch(v -> v instanceof Map<?, ?> m && !"INVALID".equals(m.get("id")));
+            int x = (int) (chunk.getKey() >> 32);
+            int z = (int) (long) chunk.getKey();
+            for (int dx = -8; dx <= 8 && hasStart; dx++) {
+                for (int dz = -8; dz <= 8; dz++) {
+                    if ((dx != 0 || dz != 0) && unknown.contains(ReferenceWorld.key(x + dx, z + dz))) {
+                        referenced.add(chunk.getKey());
+                    }
+                }
+            }
+        }
         boolean changed = true;
         while (changed) {
             changed = false;

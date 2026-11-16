@@ -51,12 +51,14 @@ final class DimensionScan {
     private final StructureGraph structures = new StructureGraph();
     private final Map<Long, RegionScan> regions = new HashMap<>();
     private final Set<String> unreadableFiles = new HashSet<>();
+    private final Set<Long> unreadableRegions = new HashSet<>();
     private final List<RegionPlan> plans = new ArrayList<>();
 
     /** What the first pass found in one region: one bit per chunk index. */
     private static final class RegionScan {
         final BitSet present = new BitSet(RegionFile.CHUNKS);
         final BitSet unreadable = new BitSet(RegionFile.CHUNKS);
+        final BitSet regionUnreadable = new BitSet(RegionFile.CHUNKS);
         final BitSet played = new BitSet(RegionFile.CHUNKS);
         final BitSet external = new BitSet(RegionFile.CHUNKS);
         final BitSet playerEntity = new BitSet(RegionFile.CHUNKS);
@@ -126,7 +128,7 @@ final class DimensionScan {
             scan(file);
         }
         if (rules.checksStructures()) {
-            structures.resolve(this::keptWithoutStructures);
+            structures.resolve(this::keptWithoutStructures, this::referencesUnknown);
         }
         Map<Storage, long[]> totals = new EnumMap<>(Storage.class);
         for (Storage storage : Storage.values()) {
@@ -172,6 +174,7 @@ final class DimensionScan {
                 }
                 if (!fields.readable()) {
                     scan.unreadable.set(index);
+                    scan.regionUnreadable.set(index);
                     warnings.add(new Warning(
                             Warning.UNREADABLE_CHUNK,
                             dimension.toString(),
@@ -274,12 +277,27 @@ final class DimensionScan {
         return !scan.rewritable || rules.keptWithoutStructures(facts(scan, index, x, z), played);
     }
 
+    /** The chunk's {@code region/} entry, or its whole file, could not be read. */
+    private boolean referencesUnknown(long chunk) {
+        int x = (int) chunk;
+        int z = (int) (chunk >> 32);
+        if (unreadableRegions.contains(regionKey(x >> 5, z >> 5))) {
+            return true;
+        }
+        RegionScan scan = regions.get(regionKey(x >> 5, z >> 5));
+        return scan != null && scan.regionUnreadable.get((x & 31) + (z & 31) * 32);
+    }
+
     private static long regionKey(int regionX, int regionZ) {
         return (long) regionX << 32 | (regionZ & 0xFFFFFFFFL);
     }
 
     private void unreadableRegion(String name, String message) {
         unreadableFiles.add(name);
+        int[] coordinates = RegionFile.coordinates(name);
+        if (coordinates != null) {
+            unreadableRegions.add(regionKey(coordinates[0], coordinates[1]));
+        }
         warnings.add(new Warning(Warning.UNREADABLE_REGION, dimension.toString(), name, null, null, message));
     }
 
