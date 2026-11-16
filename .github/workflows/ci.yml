@@ -141,7 +141,7 @@ jobs:
           JAVA_HOME="$(printenv "JAVA_HOME_${gradle_java}_X64")" || { echo "No JDK ${gradle_java} set up."; exit 1; }
           export JAVA_HOME
           cd core
-          ./gradlew test writeFixtureClasspath --no-daemon -PgeneratedWorlds=../build/generated-worlds \
+          ./gradlew writeFixtureClasspath test --no-daemon -PgeneratedWorlds=../build/generated-worlds \
             --tests '*DryRunFixtureTest' --tests '*PruneFixtureTest' --tests '*DamagedRegionFixtureTest' \
             -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64
 
