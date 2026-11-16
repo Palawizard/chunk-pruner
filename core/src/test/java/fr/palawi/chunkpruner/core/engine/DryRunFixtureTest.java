@@ -107,6 +107,9 @@ class DryRunFixtureTest {
         String[][] names = {
             {"K1", "played in"},
             {"K2", "near players or spawn"},
+            {"K3", "force-loaded"},
+            {"K4", "holding structure starts"},
+            {"K5", "with player entities"},
             {"K6", "in protected areas"},
             {"K7", "unreadable"},
             {"K8", "next to played chunks"}

@@ -7,9 +7,11 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
@@ -47,6 +49,63 @@ public final class ReferenceWorld {
     /** Overworld K2 points as chunk coordinates: world spawn, player positions and respawns. */
     public List<int[]> overworldPoints() {
         return overworldPoints;
+    }
+
+    /** Player UUIDs as four ints, from the player file names and the host player in level.dat. */
+    public Set<List<Integer>> players() throws IOException {
+        Set<List<Integer>> players = new HashSet<>();
+        if (level().get("Player") instanceof Map<?, ?> host && host.get("UUID") instanceof int[] u) {
+            players.add(List.of(u[0], u[1], u[2], u[3]));
+        }
+        for (String folder : List.of("playerdata", "players/data")) {
+            Path dir = world.resolve(folder);
+            if (Files.isDirectory(dir)) {
+                try (Stream<Path> files = Files.list(dir)) {
+                    for (Path file :
+                            files.filter(p -> p.toString().endsWith(".dat")).toList()) {
+                        String name = file.getFileName().toString();
+                        java.util.UUID id = java.util.UUID.fromString(name.substring(0, name.length() - 4));
+                        long hi = id.getMostSignificantBits();
+                        long lo = id.getLeastSignificantBits();
+                        players.add(List.of((int) (hi >> 32), (int) hi, (int) (lo >> 32), (int) lo));
+                    }
+                }
+            }
+        }
+        return players;
+    }
+
+    /**
+     * Overworld chunks listed in its forced chunk file, as keys of {@link Chunk#key()}: the
+     * {@code Forced} array of {@code data/chunks.dat}, or the {@code chunk_pos} of each ticket in
+     * {@code data/minecraft/chunk_tickets.dat}, whichever the world has.
+     */
+    public Set<Long> forcedChunks() throws IOException {
+        Set<Long> forced = new HashSet<>();
+        Path legacy = overworld.resolve("data/chunks.dat");
+        Path tickets = overworld.resolve("data/minecraft/chunk_tickets.dat");
+        if (Files.isRegularFile(legacy)) {
+            Map<String, Object> data = ReferenceNbt.compound(readGzip(legacy), "data");
+            if (data.get("Forced") instanceof long[] chunks) {
+                for (long packed : chunks) {
+                    forced.add(key((int) packed, (int) (packed >>> 32)));
+                }
+            }
+        }
+        if (Files.isRegularFile(tickets)) {
+            Map<String, Object> data = ReferenceNbt.compound(readGzip(tickets), "data");
+            if (data.get("tickets") instanceof List<?> list) {
+                for (Object t : list) {
+                    int[] pos = (int[]) ((Map<?, ?>) t).get("chunk_pos");
+                    forced.add(key(pos[0], pos[1]));
+                }
+            }
+        }
+        return forced;
+    }
+
+    public static long key(int x, int z) {
+        return (long) x << 32 | (z & 0xFFFFFFFFL);
     }
 
     public Map<String, Object> level() {

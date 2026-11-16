@@ -9,18 +9,25 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Reads the fields the rules need from one chunk of a {@code region/} file: {@code xPos},
- * {@code zPos}, {@code InhabitedTime} and {@code Status}, the same keys on 1.20.1, 1.21.1 and
- * 26.3. The whole payload is decoded to its end, so a checksum or format error anywhere in it
- * makes the chunk unreadable.
+ * Reads the fields the rules need from one chunk: from a {@code region/} entry {@code xPos},
+ * {@code zPos}, {@code InhabitedTime}, {@code Status} and the {@code structures} compound with
+ * {@code starts} and {@code References}; from an {@code entities/} entry {@code Position} and the
+ * {@code Entities} list. The keys are the same on 1.20.1, 1.21.1 and 26.3. The whole payload is
+ * decoded to its end, so a checksum or format error anywhere in it makes the chunk unreadable.
  */
 public final class ChunkReader {
     static final int EXTERNAL_FLAG = 0x80;
-    private static final Set<String> FIELDS = Set.of("xPos", "zPos", "InhabitedTime", "Status");
+    private static final String STARTS = "structures.starts";
+    private static final String REFERENCES = "structures.References";
+    private static final Set<String> FIELDS = Set.of("xPos", "zPos", "InhabitedTime", "Status", STARTS, REFERENCES);
+    private static final Set<String> ENTITY_FIELDS = Set.of("Position", "Entities");
 
     private final Compression compression;
 
@@ -41,17 +48,46 @@ public final class ChunkReader {
     }
 
     public ChunkFields read(FileChannel channel, RegionFile region, ChunkEntry entry) {
+        Decoded decoded = decodeSafely(channel, region, entry, FIELDS);
+        return decoded.values == null
+                ? ChunkFields.unreadable(decoded.problem, decoded.external)
+                : fields(decoded.values, region, entry, decoded.external);
+    }
+
+    /** The entity list of an {@code entities/} entry, or why it cannot be read. */
+    public EntityFields readEntities(FileChannel channel, RegionFile region, ChunkEntry entry) {
+        Decoded decoded = decodeSafely(channel, region, entry, ENTITY_FIELDS);
+        if (decoded.values == null) {
+            return new EntityFields(null, decoded.problem);
+        }
+        if (!(decoded.values.get("Position") instanceof int[] pos)
+                || pos.length != 2
+                || pos[0] != region.chunkX(entry)
+                || pos[1] != region.chunkZ(entry)) {
+            return new EntityFields(null, "its Position is missing or names another chunk");
+        }
+        Object entities = decoded.values.get("Entities");
+        if (entities != null && !(entities instanceof List<?>)) {
+            return new EntityFields(null, "Entities is not a list");
+        }
+        return new EntityFields(entities == null ? List.of() : (List<?>) entities, null);
+    }
+
+    private record Decoded(Map<String, Object> values, String problem, boolean external) {}
+
+    private Decoded decodeSafely(FileChannel channel, RegionFile region, ChunkEntry entry, Set<String> fields) {
         try {
-            return decode(channel, region, entry);
+            return decode(channel, region, entry, fields);
         } catch (IOException | RuntimeException e) {
             String reason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            return ChunkFields.unreadable("cannot decode the chunk data: " + reason, false);
+            return new Decoded(null, "cannot decode the chunk data: " + reason, false);
         }
     }
 
-    private ChunkFields decode(FileChannel channel, RegionFile region, ChunkEntry entry) throws IOException {
+    private Decoded decode(FileChannel channel, RegionFile region, ChunkEntry entry, Set<String> fields)
+            throws IOException {
         if (!entry.inFile()) {
-            return ChunkFields.unreadable("its location entry points outside the file", false);
+            return new Decoded(null, "its location entry points outside the file", false);
         }
         ByteBuffer sectors = ByteBuffer.allocate((int) entry.byteLength());
         readFully(channel, sectors, entry.byteOffset());
@@ -59,7 +95,7 @@ public final class ChunkReader {
         int length = sectors.getInt();
         int type = sectors.get() & 0xFF;
         if (length <= 0) {
-            return ChunkFields.unreadable("the chunk is allocated but its data length is " + length, false);
+            return new Decoded(null, "the chunk is allocated but its data length is " + length, false);
         }
         boolean external = (type & EXTERNAL_FLAG) != 0;
         int id = type & ~EXTERNAL_FLAG;
@@ -67,18 +103,18 @@ public final class ChunkReader {
             String reason = id == Compression.LZ4
                     ? "LZ4 compression and no LZ4 library on the class path"
                     : "unknown compression " + Compression.describe(id);
-            return ChunkFields.unreadable(reason, external);
+            return new Decoded(null, reason, external);
         }
         InputStream compressed;
         if (external) {
             Path file = externalFile(region, entry);
             if (!Files.isRegularFile(file)) {
-                return ChunkFields.unreadable("its external file " + file.getFileName() + " is missing", true);
+                return new Decoded(null, "its external file " + file.getFileName() + " is missing", true);
             }
             compressed = Files.newInputStream(file);
         } else {
             if (length - 1 > sectors.remaining()) {
-                return ChunkFields.unreadable("its data runs past its sectors", false);
+                return new Decoded(null, "its data runs past its sectors", false);
             }
             compressed = new ByteArrayInputStream(sectors.array(), 5, length - 1);
         }
@@ -90,9 +126,9 @@ public final class ChunkReader {
             throw e;
         }
         try (InputStream data = opened) {
-            Map<String, Object> values = NbtFieldReader.read(data, FIELDS);
+            Map<String, Object> values = NbtFieldReader.read(data, fields);
             data.transferTo(java.io.OutputStream.nullOutputStream());
-            return fields(values, region, entry, external);
+            return new Decoded(values, null, external);
         }
     }
 
@@ -108,7 +144,37 @@ public final class ChunkReader {
         if ((Long) x != region.chunkX(entry) || (Long) z != region.chunkZ(entry)) {
             return ChunkFields.unreadable("it says it is chunk " + x + ", " + z, external);
         }
-        return ChunkFields.readable((Long) inhabited, status instanceof String s ? s : null, external);
+        Object starts = values.get(STARTS);
+        Object references = values.get(REFERENCES);
+        if (starts != null && !(starts instanceof Map<?, ?>)
+                || references != null && !(references instanceof Map<?, ?>)) {
+            return ChunkFields.unreadable("its structures data is not made of compounds", external);
+        }
+        Set<String> validStarts = new HashSet<>();
+        if (starts instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> start : map.entrySet()) {
+                if (start.getValue() instanceof Map<?, ?> s && !"INVALID".equals(s.get("id"))) {
+                    validStarts.add((String) start.getKey());
+                }
+            }
+        }
+        Map<String, long[]> refs = new HashMap<>();
+        if (references instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> ref : map.entrySet()) {
+                if (!(ref.getValue() instanceof long[] positions)) {
+                    return ChunkFields.unreadable("a structure reference is not a long array", external);
+                }
+                refs.put((String) ref.getKey(), positions);
+            }
+        }
+        return new ChunkFields(
+                true,
+                (Long) inhabited,
+                status instanceof String s ? s : null,
+                external,
+                null,
+                Set.copyOf(validStarts),
+                Map.copyOf(refs));
     }
 
     static void readFully(FileChannel channel, ByteBuffer buffer, long position) throws IOException {
@@ -122,14 +188,25 @@ public final class ChunkReader {
         }
     }
 
-    /** What the rules need from one chunk, or why it could not be read. */
-    public record ChunkFields(boolean readable, long inhabitedTime, String status, boolean external, String problem) {
-        static ChunkFields readable(long inhabitedTime, String status, boolean external) {
-            return new ChunkFields(true, inhabitedTime, status, external, null);
-        }
-
+    /**
+     * What the rules need from one {@code region/} entry, or why it could not be read.
+     * {@code starts} holds the ids of the structures that start in the chunk (not the
+     * {@code INVALID} placeholder); {@code references} maps structure ids to the packed positions
+     * of the chunks that hold their start.
+     */
+    public record ChunkFields(
+            boolean readable,
+            long inhabitedTime,
+            String status,
+            boolean external,
+            String problem,
+            Set<String> starts,
+            Map<String, long[]> references) {
         static ChunkFields unreadable(String problem, boolean external) {
-            return new ChunkFields(false, -1, null, external, problem);
+            return new ChunkFields(false, -1, null, external, problem, Set.of(), Map.of());
         }
     }
+
+    /** The entity list of one {@code entities/} entry, or null with the reason it cannot be read. */
+    public record EntityFields(List<?> entities, String problem) {}
 }

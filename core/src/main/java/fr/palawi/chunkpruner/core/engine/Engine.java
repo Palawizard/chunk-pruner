@@ -11,7 +11,9 @@ import fr.palawi.chunkpruner.core.report.RunReport;
 import fr.palawi.chunkpruner.core.report.Storage;
 import fr.palawi.chunkpruner.core.report.Warning;
 import fr.palawi.chunkpruner.core.rules.KeepRules;
+import fr.palawi.chunkpruner.core.rules.PlayerEntities;
 import fr.palawi.chunkpruner.core.world.DimensionId;
+import fr.palawi.chunkpruner.core.world.ForcedChunks;
 import fr.palawi.chunkpruner.core.world.SessionLock;
 import fr.palawi.chunkpruner.core.world.WorldData;
 import fr.palawi.chunkpruner.core.world.WorldException;
@@ -50,13 +52,6 @@ public final class Engine {
         try (SessionLock lock = settings.takeSessionLock() ? SessionLock.acquire(world) : null) {
             WorldData data = WorldData.read(world);
             Warnings warnings = new Warnings();
-            warnings.add(new Warning(
-                    Warning.RULES_NOT_CHECKED,
-                    null,
-                    null,
-                    null,
-                    null,
-                    "this version does not check K3 (forced chunks), K4 (structures) and K5 (entities) yet."));
             ChunkReader reader = new ChunkReader(settings.compression());
             List<DimensionReport> dimensions = new ArrayList<>();
             List<Path> folders = new ArrayList<>();
@@ -64,7 +59,10 @@ public final class Engine {
             for (DimensionId id : settings.config().dimensions()) {
                 Path folder = data.layout().dimensionFolder(world, id);
                 KeepRules rules = new KeepRules(settings.config(), id, data.protectedPoints());
-                DimensionScan scan = new DimensionScan(id, world, folder, rules, reader, warnings);
+                ForcedChunks forced =
+                        rules.checksForcedChunks() ? ForcedChunks.read(folder, data.layout()) : ForcedChunks.none();
+                PlayerEntities entities = new PlayerEntities(id, data.players());
+                DimensionScan scan = new DimensionScan(id, world, folder, rules, forced, entities, reader, warnings);
                 scan.run();
                 dimensions.add(scan.report());
                 folders.add(folder);
