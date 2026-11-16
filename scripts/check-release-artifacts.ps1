@@ -8,8 +8,9 @@ param(
 )
 
 # Checks that every band and loader produced exactly one release JAR with its loader
-# metadata, the core classes and the loader entrypoint, that no metadata placeholder
-# was left unexpanded, and that `java -jar <jar> --help` prints the command-line help.
+# metadata, the core classes and the loader entrypoint and no test file, that no metadata
+# placeholder was left unexpanded, that `java -jar <jar> --help` prints the command-line help,
+# and that `java -jar <jar>` without --dry-run refuses to prune.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -63,6 +64,13 @@ foreach ($band in (Get-VersionMatrix).bands) {
                 foreach ($entry in $required) {
                     if ($entries -notcontains $entry) { throw "$($jar.Name) is missing $entry." }
                 }
+                # Test code never ships: the fixture tools (one of them rewrites worlds), the join
+                # client and anything from testmod/.
+                $testFiles = @($entries | Where-Object {
+                        $_ -like "$packagePath/core/fixture/*" -or $_ -like '*FixturePruneTool*' -or $_ -like '*LockHolder*' -or
+                        $_ -like '*JoinBot*' -or $_ -like 'testmod/*' -or $_ -like '*Test.class'
+                    })
+                if ($testFiles.Count -gt 0) { throw "$($jar.Name) contains test files: $($testFiles -join ', ')." }
                 $reader = New-Object System.IO.StreamReader($zip.GetEntry($metadataPath).Open())
                 try { $metadata = $reader.ReadToEnd() } finally { $reader.Dispose() }
                 $reader = New-Object System.IO.StreamReader($zip.GetEntry('META-INF/MANIFEST.MF').Open())
@@ -75,9 +83,16 @@ foreach ($band in (Get-VersionMatrix).bands) {
             if ($manifest -notmatch "(?m)^Main-Class: $([regex]::Escape($modProps['mod_main_class']))\s*$") {
                 throw "$($jar.Name): the manifest has no Main-Class: $($modProps['mod_main_class'])."
             }
+            if ($manifest -notmatch "(?m)^Loader-Name: $loaderName\s*$") { throw "$($jar.Name): the manifest has no Loader-Name: $loaderName." }
             $help = (& (Get-JavaExe -Version $band.java) -jar $jar.FullName --help 2>$null) -join "`n"
             if ($LASTEXITCODE -ne 0 -or $help -notmatch 'Usage: java -jar') {
                 throw "$($jar.Name): java -jar --help exited with $LASTEXITCODE and printed no usage."
+            }
+            # This version only runs dry runs: without --dry-run the tool must refuse (exit code 3)
+            # before it looks at the world.
+            $refusal = (& (Get-JavaExe -Version $band.java) -jar $jar.FullName --world (Join-Path $ProjectRoot 'build/no-such-world') 2>&1 | ForEach-Object { "$_" }) -join "`n"
+            if ($LASTEXITCODE -ne 3 -or $refusal -notmatch 'Pruning is not available') {
+                throw "$($jar.Name): java -jar without --dry-run exited with $LASTEXITCODE instead of refusing to prune."
             }
             Write-ResultLine -Status 'PASS' -Text "$label - $($jar.Name) ($($jar.Length) bytes)"
         } catch {
