@@ -1,5 +1,6 @@
 package fr.palawi.chunkpruner.core.fixture;
 
+import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -15,7 +16,15 @@ import java.util.Map;
 public final class ReferenceNbt {
     private ReferenceNbt() {}
 
-    public static Map<String, Object> readRoot(DataInputStream in) throws IOException {
+    /**
+     * Reads the root compound of fully decoded data. Lengths are checked against the bytes left, so
+     * damaged data fails instead of asking for a huge array.
+     */
+    public static Map<String, Object> readRoot(byte[] data) throws IOException {
+        return readRoot(new DataInputStream(new ByteArrayInputStream(data)));
+    }
+
+    private static Map<String, Object> readRoot(DataInputStream in) throws IOException {
         int type = in.readByte();
         if (type != 10) {
             throw new IOException("root is not a compound: " + type);
@@ -41,7 +50,7 @@ public final class ReferenceNbt {
             case 6:
                 return in.readDouble();
             case 7: {
-                byte[] bytes = new byte[in.readInt()];
+                byte[] bytes = new byte[length(in, 1)];
                 in.readFully(bytes);
                 return bytes;
             }
@@ -49,7 +58,7 @@ public final class ReferenceNbt {
                 return in.readUTF();
             case 9: {
                 int elementType = in.readByte();
-                int size = in.readInt();
+                int size = length(in, elementType == 0 ? 0 : 1);
                 List<Object> list = new ArrayList<>();
                 for (int i = 0; i < size; i++) {
                     list.add(tag(in, elementType));
@@ -68,14 +77,14 @@ public final class ReferenceNbt {
                 }
             }
             case 11: {
-                int[] ints = new int[in.readInt()];
+                int[] ints = new int[length(in, 4)];
                 for (int i = 0; i < ints.length; i++) {
                     ints[i] = in.readInt();
                 }
                 return ints;
             }
             case 12: {
-                long[] longs = new long[in.readInt()];
+                long[] longs = new long[length(in, 8)];
                 for (int i = 0; i < longs.length; i++) {
                     longs[i] = in.readLong();
                 }
@@ -84,6 +93,14 @@ public final class ReferenceNbt {
             default:
                 throw new IOException("unknown tag " + type);
         }
+    }
+
+    private static int length(DataInputStream in, int elementBytes) throws IOException {
+        int n = in.readInt();
+        if (n < 0 || (long) n * elementBytes > in.available()) {
+            throw new IOException("length " + n + " does not fit in the data left");
+        }
+        return n;
     }
 
     @SuppressWarnings("unchecked")

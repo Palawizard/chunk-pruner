@@ -200,10 +200,8 @@ public final class ReferenceWorld {
                     return null;
                 }
             }
-            try (DataInputStream in = new DataInputStream(data)) {
-                Map<String, Object> root = ReferenceNbt.readRoot(in);
-                in.readAllBytes();
-                return root;
+            try (InputStream in = data) {
+                return ReferenceNbt.readRoot(in.readAllBytes());
             }
         } catch (IOException | RuntimeException e) {
             return null;
@@ -279,8 +277,8 @@ public final class ReferenceWorld {
     }
 
     private static Map<String, Object> readGzip(Path file) throws IOException {
-        try (DataInputStream in = new DataInputStream(new GZIPInputStream(Files.newInputStream(file)))) {
-            return ReferenceNbt.readRoot(in);
+        try (InputStream in = new GZIPInputStream(Files.newInputStream(file))) {
+            return ReferenceNbt.readRoot(in.readAllBytes());
         }
     }
 

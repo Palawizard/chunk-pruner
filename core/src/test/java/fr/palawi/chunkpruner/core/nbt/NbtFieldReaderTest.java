@@ -10,7 +10,6 @@ import fr.palawi.chunkpruner.core.fixture.ReferenceNbt;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld.Chunk;
 import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -49,7 +48,7 @@ class NbtFieldReaderTest {
     @ValueSource(strings = {"1.20.1", "1.21.1", "26.3"})
     void readsTheRequestedLevelDatFieldsOnly(String world) throws Exception {
         byte[] data = levelDat(world);
-        Map<String, Object> tree = ReferenceNbt.readRoot(new DataInputStream(new ByteArrayInputStream(data)));
+        Map<String, Object> tree = ReferenceNbt.readRoot(data);
         Map<String, Object> dataTag = ReferenceNbt.compound(tree, "Data");
         Map<String, Object> found = NbtFieldReader.read(
                 new ByteArrayInputStream(data),
@@ -77,7 +76,7 @@ class NbtFieldReaderTest {
         try (GZIPInputStream in = new GZIPInputStream(Files.newInputStream(file))) {
             data = in.readAllBytes();
         }
-        Map<String, Object> tree = ReferenceNbt.readRoot(new DataInputStream(new ByteArrayInputStream(data)));
+        Map<String, Object> tree = ReferenceNbt.readRoot(data);
         Map<String, Object> found = NbtFieldReader.read(new ByteArrayInputStream(data), Set.of("Pos", "Dimension"));
         assertEquals(tree.get("Pos"), found.get("Pos"));
         assertEquals("minecraft:overworld", found.get("Dimension"));
@@ -86,7 +85,7 @@ class NbtFieldReaderTest {
     @Test
     void readsChunkFields() throws Exception {
         byte[] data = firstChunkPayload("1.21.1");
-        Map<String, Object> tree = ReferenceNbt.readRoot(new DataInputStream(new ByteArrayInputStream(data)));
+        Map<String, Object> tree = ReferenceNbt.readRoot(data);
         Map<String, Object> found =
                 NbtFieldReader.read(new ByteArrayInputStream(data), Set.of("xPos", "zPos", "InhabitedTime", "Status"));
         assertEquals(((Integer) tree.get("xPos")).longValue(), found.get("xPos"));
