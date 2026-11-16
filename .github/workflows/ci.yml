@@ -34,6 +34,29 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: ./scripts/check-commit-messages.ps1 -Range "$env:BASE_SHA..$env:HEAD_SHA" -Title $env:PR_TITLE
 
+  powershell:
+    name: PowerShell 5.1 syntax (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      # PowerShell 7 rejects the 7-only operators by token; Windows PowerShell 5.1 also
+      # proves that every script parses on 5.1.
+      - name: Check the scripts with PowerShell 7
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: ./scripts/check-powershell-compat.ps1
+
+      - name: Check the scripts with Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\scripts\check-powershell-compat.ps1
+
   core:
     name: Core tests
     runs-on: ubuntu-latest
