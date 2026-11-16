@@ -6,7 +6,9 @@ param(
     # Folder name under core/src/test/fixtures/worlds. Defaults to the Minecraft version.
     [string]$Name,
     # 'strip': an explored strip and a flown-over area. 'spawn': a short stay at spawn only.
-    [ValidateSet('strip', 'spawn')]
+    # 'keep': a village piece visited away from its start, entities, a forced chunk and the
+    # datapack dimension examplemod:mining, all set up over RCON (K3, K4, K5, S3, S4, S8).
+    [ValidateSet('strip', 'spawn', 'keep')]
     [string]$Plan = 'strip',
     # Value of region-file-compression (1.20.5 and later). Empty keeps the server default.
     [ValidateSet('', 'deflate', 'lz4', 'none')]
@@ -68,6 +70,30 @@ if ($Compression) { $properties += "region-file-compression=$Compression" }
 if ($LevelType -eq 'flat') { $properties += 'level-type=minecraft\:flat' }
 Write-VanillaServerConfig -ServerDir $serverDir -Properties $properties
 
+# Entity data as each version writes it in commands (checked in the decompiled sources).
+$keepSyntax = @{
+    '1.20.1' = @{ PackMeta = '{"pack":{"pack_format":15,"description":"Fixture dimension"}}'; Name = 'CustomName:''"Bacon"'''; Item = 'Item:{id:"minecraft:diamond",Count:1b}'; Boat = 'boat'; Leash = { param($x, $y, $z) "Leash:{X:$x,Y:$y,Z:$z}" } }
+    '1.21.1' = @{ PackMeta = '{"pack":{"pack_format":48,"description":"Fixture dimension"}}'; Name = 'CustomName:''"Bacon"'''; Item = 'Item:{id:"minecraft:diamond",count:1}'; Boat = 'boat'; Leash = { param($x, $y, $z) "leash:[I;$x,$y,$z]" } }
+    '26.3' = @{ PackMeta = '{"pack":{"min_format":121,"max_format":121,"description":"Fixture dimension"}}'; Name = 'CustomName:"Bacon"'; Item = 'Item:{id:"minecraft:diamond",count:1}'; Boat = 'oak_boat'; Leash = { param($x, $y, $z) "leash:[I;$x,$y,$z]" } }
+}
+if ($Plan -eq 'keep') {
+    if ($LevelType -ne 'flat') { throw 'The keep plan needs the superflat world (its village and heights are known).' }
+    # A datapack dimension, read by the server when it creates the world (S8).
+    $pack = Join-Path $serverDir 'world/datapacks/examplemod'
+    New-Item -ItemType Directory -Path (Join-Path $pack 'data/examplemod/dimension') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $pack 'pack.mcmeta') -Value $keepSyntax[$Minecraft].PackMeta -Encoding ascii
+    $dimension = '{"type":"minecraft:overworld","generator":{"type":"minecraft:flat","settings":{"biome":"minecraft:plains","layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":3}],"lakes":false,"features":false}}}'
+    Set-Content -LiteralPath (Join-Path $pack 'data/examplemod/dimension/mining.json') -Value $dimension -Encoding ascii
+}
+
+function Invoke-RconExpect {
+    # Sends a command and fails unless the answer matches the pattern.
+    param([string]$Command, [string]$Pattern)
+    $answer = Invoke-Rcon -Port $RconPort -Password $rconPassword -Command $Command
+    if ($answer -notmatch $Pattern) { throw "RCON '$Command' answered '$answer', expected /$Pattern/." }
+    return $answer
+}
+
 $botName = 'Explorer'
 $script:rconLog = @()
 $timeline = @()
@@ -96,6 +122,70 @@ try {
     if ($Plan -eq 'spawn') {
         Start-Sleep -Seconds 10
         $timeline += 'stayed 10 s at the join position'
+    } elseif ($Plan -eq 'keep') {
+        # Offline players get UUID.nameUUIDFromBytes("OfflinePlayer:<name>"): MD5, version 3.
+        $md5 = [System.Security.Cryptography.MD5]::Create()
+        $hash = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("OfflinePlayer:$botName"))
+        $md5.Dispose()
+        $hash[6] = ($hash[6] -band 0x0f) -bor 0x30
+        $hash[8] = ($hash[8] -band 0x3f) -bor 0x80
+        $ownerInts = @(0, 4, 8, 12 | ForEach-Object {
+                [BitConverter]::ToInt32([byte[]]@($hash[$_ + 3], $hash[$_ + 2], $hash[$_ + 1], $hash[$_]), 0)
+            }) -join ','
+        $syntax = $keepSyntax[$Minecraft]
+        Start-Sleep -Seconds 5
+        $timeline += 'stayed 5 s at the join position'
+        # S4: the plains village that starts in chunk (0, 14) has a street in chunk (5, 14), five
+        # chunks east (same layout on the three versions with this seed). The player stands in
+        # chunk (8, 14), so the start chunk stays beyond the view distance and is never simulated.
+        Invoke-RconExpect -Command 'locate structure minecraft:village_plains' -Pattern '\[(-?\d+), ~, (-?\d+)\]' | Out-Null
+        Invoke-RconExpect -Command "tp $botName 136 -50 232" -Pattern 'Teleported' | Out-Null
+        Start-Sleep -Seconds 15
+        Invoke-RconExpect -Command 'fill 86 -55 230 90 -55 234 minecraft:glass' -Pattern 'Successfully filled' | Out-Null
+        Start-Sleep -Seconds 2
+        $timeline += 'village: stood in chunk (8, 14) at x=136 z=232 for 15 s, then a 5 by 5 glass fill at y=-55 in chunk (5, 14), a street of the village that starts in chunk (0, 14)'
+        # K3 and K5: one setup per chunk along chunk row z=-10 (block z=-152), chunks x=-7 to 6,
+        # loaded with forceload while the player is 24 chunks away, so none of them is simulated
+        # near a player. NoAI keeps each mob in its chunk.
+        Invoke-RconExpect -Command 'forceload add -112 -160 111 -145' -Pattern 'Marked|marked' | Out-Null
+        Start-Sleep -Seconds 3
+        $z = -152
+        $setups = @(
+            , @(-7, "summon wolf {x} -60 $z {NoAI:1b,Sitting:1b,Owner:[I;$ownerInts]}")
+            , @(-6, "summon pig {x} -60 $z {NoAI:1b,$($syntax.Name)}")
+            , @(-5, "summon sheep {x1} -60 $z {NoAI:1b,$(& $syntax.Leash '{x}' -60 $z)}")
+            , @(-4, "summon cow {x} -60 $z {NoAI:1b,PersistenceRequired:1b}")
+            , @(-3, "summon armor_stand {x} -60 $z")
+            , @(-2, "summon item_frame {x} -60 $z {Facing:1b,$($syntax.Item)}")
+            , @(-1, "summon minecart {x} -60 $z")
+            , @(0, "summon $($syntax.Boat) {x} -60 $z")
+            , @(1, "summon end_crystal {x} -60 $z {ShowBottom:0b}")
+            , @(2, "summon item {x} -60 $z {Age:-32768s,$($syntax.Item)}")
+            , @(3, "summon chest_minecart {x} -60 $z {LootTable:`"minecraft:chests/abandoned_mineshaft`"}")
+            , @(4, "summon end_crystal {x} -60 $z {ShowBottom:1b}")
+            , @(5, "summon cow {x} -60 $z {NoAI:1b}")
+        )
+        foreach ($setup in $setups) {
+            $cx = $setup[0]
+            $x = 16 * $cx + 8
+            if ($cx -eq -5) {
+                Invoke-RconExpect -Command "setblock $x -60 $z minecraft:oak_fence" -Pattern 'Changed the block' | Out-Null
+            }
+            $command = $setup[1] -replace '\{x1\}', ($x + 2) -replace '\{x\}', $x
+            Invoke-RconExpect -Command $command -Pattern 'Summoned new' | Out-Null
+            $timeline += "chunk ($cx, -10): $command"
+        }
+        Start-Sleep -Seconds 5
+        Invoke-RconExpect -Command 'forceload remove -112 -160 111 -145' -Pattern 'Unmarked|unmarked' | Out-Null
+        Invoke-RconExpect -Command "forceload add -136 $z" -Pattern 'Marked|marked' | Out-Null
+        $timeline += 'removed the forceload of chunks x=-7 to 6, z=-10; forceload kept on chunk (-9, -10) (K3)'
+        Start-Sleep -Seconds 3
+        # S8: chunks generated in the datapack dimension by a short forceload.
+        Invoke-RconExpect -Command 'execute in examplemod:mining run forceload add 8 8' -Pattern 'Marked|marked' | Out-Null
+        Start-Sleep -Seconds 5
+        Invoke-RconExpect -Command 'execute in examplemod:mining run forceload remove 8 8' -Pattern 'Unmarked|unmarked' | Out-Null
+        $timeline += 'examplemod:mining: chunk (0, 0) force-loaded for 5 s, then released'
+        Start-Sleep -Seconds 3
     } else {
         Start-Sleep -Seconds 5
         $timeline += 'stayed 5 s at the join position'
