@@ -167,7 +167,7 @@ public final class Engine {
     private static String way(Journal.Plan plan) {
         String restore = plan.backup() == null
                 ? "This run made no backup (backup is false in the config)."
-                : "To undo the run, copy the files of " + plan.backup() + " back over the world.";
+                : "To undo the run, follow " + plan.backup() + "/" + Backups.RESTORE_FILE + ".";
         return "The next run tries again to finish this one. " + restore + " To give up the run, delete"
                 + " chunkpruner/journal.json and chunkpruner/journal-plan.json; the regions already rewritten stay"
                 + " rewritten.";

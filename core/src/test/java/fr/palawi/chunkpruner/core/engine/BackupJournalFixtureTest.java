@@ -24,6 +24,8 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** SPEC section 4, steps 5 to 8 and the resume paragraph, on copies of the 1.21.1 fixture. */
 class BackupJournalFixtureTest {
@@ -36,45 +38,59 @@ class BackupJournalFixtureTest {
         return FixtureWorlds.copy(FixtureWorlds.committed("1.21.1"), temp.resolve(name));
     }
 
-    /** The backup holds every changed file as it was; copying it back restores the world. */
-    @Test
-    void theBackupHoldsTheChangedFilesAndRestoresTheWorld() throws Exception {
-        Path world = world("world");
+    /**
+     * The backup holds every changed file as it was, and following its restore.txt gives the world
+     * back, on the layout with the overworld at the root (1.21.1) and on the one with every
+     * dimension under dimensions/ (26.3).
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"1.21.1", "26.3", "26.3-keep", "1.20.1-keep"})
+    void followingRestoreTxtGivesTheWorldBack(String name) throws Exception {
+        Path world = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("world"));
         Map<String, String> before = ReferenceWorld.checksums(world);
         Engine.RunResult result =
                 Engine.run(settings(world, Config.defaults(), RunMode.PRUNE).withClock(at(0)));
-
         String backup = (String) readJson(result.jsonReport()).get("backup");
         assertEquals("chunkpruner/backups/20261116-100000-prune", backup);
-        Path overworld = world.resolve(backup).resolve("minecraft/overworld");
-        Map<String, String> after = ReferenceWorld.checksums(world);
-        int changed = 0;
-        for (Map.Entry<String, String> file : before.entrySet()) {
-            if (!file.getValue().equals(after.get(file.getKey()))) {
-                changed++;
-                Path copy = overworld.resolve(file.getKey());
-                assertTrue(Files.isRegularFile(copy), "backed up: " + file.getKey());
-                assertEquals(
-                        file.getValue(),
-                        ReferenceWorld.checksums(copy.getParent())
-                                .get(copy.getFileName().toString()));
-            }
-        }
-        assertTrue(changed > 0);
-        assertFalse(Files.exists(world.resolve("chunkpruner/journal.json")));
-        assertFalse(Files.exists(world.resolve("chunkpruner/journal-plan.json")));
+        assertTrue(!before.equals(ReferenceWorld.checksums(world)), "the prune changed the world");
 
-        try (Stream<Path> files = Files.walk(overworld)) {
-            for (Path copy : files.filter(Files::isRegularFile).toList()) {
-                Files.copy(
-                        copy,
-                        world.resolve(overworld.relativize(copy).toString()),
-                        StandardCopyOption.REPLACE_EXISTING);
+        List<String> steps = Files.readAllLines(world.resolve(backup).resolve("restore.txt")).stream()
+                .filter(l -> l.startsWith("Copy the files of "))
+                .toList();
+        assertTrue(!steps.isEmpty());
+        for (String step : steps) {
+            String[] parts = step.substring("Copy the files of ".length()).split(" into ");
+            Path from = world.resolve(parts[0]);
+            Path to = world.resolve(parts[1]);
+            try (Stream<Path> files = Files.list(from)) {
+                for (Path file : files.toList()) {
+                    Files.copy(file, to.resolve(file.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+                }
             }
         }
         Map<String, String> restored = new HashMap<>(ReferenceWorld.checksums(world));
         restored.keySet().removeIf(p -> p.startsWith("chunkpruner/"));
-        assertEquals(before, restored, "copying the backup back gives the world as it was");
+        assertEquals(before, restored, "following restore.txt gives the world as it was");
+    }
+
+    /** A backup folder without restore.txt, left by a run killed during its copy, is deleted. */
+    @Test
+    void aPartialBackupIsDeletedAndTakesNoRetentionSlot() throws Exception {
+        Path world = world("world");
+        Engine.run(settings(
+                        world,
+                        Config.fromJson("{\"protectRadiusChunks\": 8, \"protectNeighborRadiusChunks\": 3}"),
+                        RunMode.PRUNE)
+                .withClock(at(0)));
+        Path partial = Files.createDirectories(world.resolve("chunkpruner/backups/20261116-100100-prune/minecraft"));
+        Engine.run(settings(world, Config.fromJson("{\"backupRetention\": 2}"), RunMode.PRUNE)
+                .withClock(at(2)));
+        assertFalse(Files.exists(partial.getParent()));
+        try (Stream<Path> folders = Files.list(world.resolve("chunkpruner/backups"))) {
+            assertEquals(
+                    List.of("20261116-100000-prune", "20261116-100200-prune"),
+                    folders.map(p -> p.getFileName().toString()).sorted().toList());
+        }
     }
 
     @Test

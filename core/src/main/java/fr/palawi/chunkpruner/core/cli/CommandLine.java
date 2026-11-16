@@ -93,8 +93,9 @@ public final class CommandLine {
                 if (mode == RunMode.DRY_RUN) {
                     out.println("This was a dry run: no file was changed.");
                 } else if (result.report().backup() != null) {
-                    out.println("The changed files were backed up to "
-                            + Path.of(world).resolve(result.report().backup()));
+                    Path backup = Path.of(world).resolve(result.report().backup());
+                    out.println("The changed files were backed up to " + backup);
+                    out.println("To undo the run, follow " + backup.resolve("restore.txt"));
                 }
             }
             out.println("Report: " + result.textReport());
@@ -114,11 +115,9 @@ public final class CommandLine {
             return EXIT_ERROR;
         } catch (IOException | RuntimeException e) {
             err.println("The run failed: " + e.getMessage());
-            if (hasJournal(world)) {
-                err.println("The world has an unfinished prune run (chunkpruner/journal.json). The next run tries to"
-                        + " finish it before anything else. If it keeps failing, restore the backup named in"
-                        + " chunkpruner/journal-plan.json, if there is one, then delete chunkpruner/journal.json"
-                        + " and chunkpruner/journal-plan.json.");
+            if (hasJournal(world) && !String.valueOf(e.getMessage()).contains("journal.json")) {
+                err.println("The world has an unfinished prune run (chunkpruner/journal.json): the next run tries to"
+                        + " finish it before anything else.");
             }
             return EXIT_ERROR;
         }
@@ -153,7 +152,7 @@ public final class CommandLine {
                 + "Without --dry-run the chunks are removed. Every changed file is first copied to" + nl
                 + "<world>/chunkpruner/backups/<run>, and chunkpruner/journal.json lets an interrupted" + nl
                 + "run finish: while it exists, any run, a dry run too, finishes that run first and stops." + nl
-                + "Copy a backup back over the world to undo a run." + nl
+                + "To undo a run, follow the restore.txt of its backup." + nl
                 + nl
                 + "Exit codes: 0 done, 1 error, 2 bad options, 3 refused (world in use, or not enough" + nl
                 + "free disk space)." + nl;

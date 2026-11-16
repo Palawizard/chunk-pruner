@@ -17,9 +17,13 @@ import java.util.stream.Stream;
 /**
  * Backups of the files a prune run changes (SPEC section 4, step 5), in
  * {@code <world>/chunkpruner/backups/<run-id>/<namespace>/<path>/<storage>/}, and their retention
- * (step 8). Copying the files back over the world restores it as it was before the run.
+ * (step 8). The {@code restore.txt} of a backup says which of its folders goes back into which
+ * folder of the world.
  */
 final class Backups {
+    /** Written last: the instructions to restore, and the mark of a complete backup. */
+    static final String RESTORE_FILE = "restore.txt";
+
     private static final Pattern RUN_FOLDER = Pattern.compile("(\\d{8}-\\d{6})-prune(?:-(\\d+))?");
 
     private Backups() {}
@@ -37,6 +41,7 @@ final class Backups {
         Path folder = root(world).resolve(runId);
         try {
             copyAll(world, folder, regions);
+            AtomicFiles.writeString(folder.resolve(RESTORE_FILE), restoreText(world, folder, regions));
         } catch (IOException | RuntimeException e) {
             if (Files.isDirectory(folder)) {
                 try {
@@ -48,6 +53,33 @@ final class Backups {
             throw e;
         }
         return world.relativize(folder).toString().replace('\\', '/');
+    }
+
+    /**
+     * Which folder of the backup goes back where: the dimensions keep their id in the backup, while
+     * the world keeps the overworld at its root and the nether and the End in {@code DIM-1} and
+     * {@code DIM1} before data version 4772.
+     */
+    static String restoreText(Path world, Path folder, List<RegionPlan> regions) {
+        java.util.Set<String> lines = new java.util.LinkedHashSet<>();
+        for (RegionPlan region : regions) {
+            DimensionId dimension = DimensionId.parse(region.dimension());
+            for (FilePlan file : region.files()) {
+                String from = world.relativize(folder.resolve(dimension.namespace())
+                                .resolve(dimension.path())
+                                .resolve(file.storage().folder()))
+                        .toString()
+                        .replace('\\', '/');
+                String to = world.relativize(world.resolve(region.folder())
+                                .resolve(file.storage().folder())
+                                .normalize())
+                        .toString()
+                        .replace('\\', '/');
+                lines.add("Copy the files of " + from + " into " + to);
+            }
+        }
+        return "To undo this run, with the world closed, copy these folders back into the world folder,"
+                + " replacing the files there:\n" + String.join("\n", lines) + "\n";
     }
 
     private static void copyAll(Path world, Path folder, List<RegionPlan> regions) throws IOException {
@@ -84,7 +116,13 @@ final class Backups {
             for (Path folder : folders) {
                 String name = folder.getFileName().toString();
                 if (Files.isDirectory(folder) && RUN_FOLDER.matcher(name).matches() && !name.equals(current)) {
-                    runs.add(name);
+                    if (Files.isRegularFile(folder.resolve(RESTORE_FILE))) {
+                        runs.add(name);
+                    } else {
+                        // Left by a run killed during its backup, which changed nothing.
+                        deleteTree(folder);
+                        deleted.add(name);
+                    }
                 }
             }
         }
