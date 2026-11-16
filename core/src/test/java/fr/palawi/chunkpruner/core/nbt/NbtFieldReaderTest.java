@@ -173,6 +173,64 @@ class NbtFieldReaderTest {
         assertArrayEquals((int[]) ReferenceNbt.readRoot(data).get("Position"), (int[]) found.get("Position"));
     }
 
+    @Test
+    void nestingUpTo512IsReadAndDeeperIsAnError() throws Exception {
+        assertEquals(
+                1L,
+                NbtFieldReader.read(new ByteArrayInputStream(nested(511, false)), Set.of("x"))
+                        .get("x"));
+        assertEquals(
+                1L,
+                NbtFieldReader.read(new ByteArrayInputStream(nested(511, true)), Set.of("x"))
+                        .get("x"));
+        assertThrows(
+                NbtFormatException.class,
+                () -> NbtFieldReader.read(new ByteArrayInputStream(nested(512, false)), Set.of("x")));
+        assertThrows(
+                NbtFormatException.class,
+                () -> NbtFieldReader.read(new ByteArrayInputStream(nested(512, true)), Set.of("x")));
+        assertThrows(
+                NbtFormatException.class,
+                () -> NbtFieldReader.read(new ByteArrayInputStream(nested(512, false)), Set.of("a")));
+    }
+
+    /**
+     * A root compound holding {@code x: 1b} and {@code a}, which nests {@code levels} more
+     * compounds (or lists of one compound) inside it. The root is depth 1, so {@code levels} 511
+     * reaches the limit of 512 exactly.
+     */
+    private static byte[] nested(int levels, boolean lists) throws Exception {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        java.io.DataOutputStream out = new java.io.DataOutputStream(bytes);
+        out.writeByte(10);
+        out.writeUTF("");
+        out.writeByte(1);
+        out.writeUTF("x");
+        out.writeByte(1);
+        out.writeByte(lists ? 9 : 10);
+        out.writeUTF("a");
+        for (int i = 1; i < levels; i++) {
+            if (lists) {
+                out.writeByte(9);
+                out.writeInt(1);
+            } else {
+                out.writeByte(10);
+                out.writeUTF("a");
+            }
+        }
+        if (lists) {
+            out.writeByte(0);
+            out.writeInt(0);
+        } else {
+            out.writeByte(0);
+            for (int i = 1; i < levels; i++) {
+                out.writeByte(0);
+            }
+        }
+        out.writeByte(0);
+        return bytes.toByteArray();
+    }
+
     private static byte[] payload(Chunk chunk) throws Exception {
         int length = (chunk.sectors()[0] & 0xFF) << 24
                 | (chunk.sectors()[1] & 0xFF) << 16
