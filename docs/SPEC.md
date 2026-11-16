@@ -11,17 +11,20 @@ Status: draft v1.
 
 ## 2. Keep rules
 
-A chunk is kept if any rule matches. Rules are checked in order and the first match is recorded as the reason.
+A chunk is kept if any rule matches. Rules are checked in order and the first match is recorded as the reason. K7 comes before K8, so an unreadable chunk next to a played one is recorded as unreadable.
 
 | Id | Rule | Default |
 |---|---|---|
-| K1 | `InhabitedTime` is above `inhabitedThresholdTicks` | threshold `0`, so only chunks with no simulation time at all can be pruned |
-| K2 | The chunk is within `protectRadiusChunks` of a protected point: the world spawn, or a player's last position or respawn position (read from `playerdata/` and from the host data in `level.dat`) | radius `4` |
+| K1 | `InhabitedTime` is above `inhabitedThresholdTicks` | threshold `0` |
+| K2 | The chunk is within `protectRadiusChunks` of a protected point: the world spawn, or a player's last position or respawn position (read from the player data files, in `playerdata/` before data version 4772 and `players/data/` from it, and from the host player in `level.dat` on the versions that keep it there; see ARCHITECTURE) | radius `4` |
 | K3 | The chunk is force-loaded, according to the dimension's forced-chunk or chunk-ticket storage (exact file per band, see ARCHITECTURE) | on |
 | K4 | The chunk holds a structure start referenced by at least one kept chunk | on |
 | K5 | Its `entities/` entry has an entity a player cares about: custom-named, tamed or owned, leashed, or marked persistent | on |
 | K6 | It lies inside a protected box from the config (`protectedAreas`) | none |
 | K7 | It cannot be read or understood: corrupt data, unknown compression, or a missing external `.mcc` file | always on |
+| K8 | It lies within `protectNeighborRadiusChunks` (Chebyshev distance, in chunks) of a chunk kept by K1 | radius `1`, `0` turns it off |
+
+`InhabitedTime` on disk is an underestimate. The game adds to it every tick while a non-spectator player is near enough, but that does not mark the chunk for saving. The value is only written when the chunk is saved for another reason, such as just after it was generated or after one of its blocks changed. A chunk next to a player can therefore keep `0`, or a few ticks, on disk (MC-127407, still open; measurements in ADR-CP-006). A chunk at `0` was not saved again after a player came near, so no block of it was changed by a player. Its entities are in `entities/` and are saved on their own, so they may still have been changed. K8 keeps the chunks around those that K1 keeps, and K5 is to cover the entities.
 
 Chunks whose generation status is not `full` (leftovers from generation) can be pruned under the same rules.
 
@@ -67,7 +70,8 @@ From `region/`: `InhabitedTime`, `Status`, `xPos` and `zPos`, and the structure 
 - The run id, mode, context, duration, the Minecraft, loader and mod versions, and the config used.
 - For each dimension: chunks scanned, chunks kept per rule, chunks pruned, region files changed and deleted, and the size of each storage before and after.
 - Warnings: skipped dimensions, unreadable chunks, external `.mcc` files, low disk space.
-- The `.txt` file starts with a short summary, for example: "Removed 48,211 unvisited chunks (6.3 GB) from 3 dimensions. Kept 12,904 chunks: 11,870 played in, 812 near players or spawn, 222 holding structures."
+- For each keep rule, its id, its reason and the number of chunks it kept.
+- The `.txt` file starts with a short summary, for example: "Removed 48,211 unvisited chunks (6.3 GB) from 3 dimensions. Kept 12,904 chunks: 11,870 played in, 812 near players or spawn, 222 next to played chunks." A dry run says "Would remove" and "Would keep".
 
 ## 7. Commands (E1, permission level 4 by default)
 
@@ -93,6 +97,7 @@ A command never prunes a running world directly.
 |---|---|---|
 | `inhabitedThresholdTicks` | `0` | K1 threshold (20 ticks per second). |
 | `protectRadiusChunks` | `4` | K2 radius. |
+| `protectNeighborRadiusChunks` | `1` | K8 radius, in chunks, from 0 to 16. `0` turns K8 off. |
 | `protectForcedChunks` | `true` | K3. |
 | `protectStructures` | `true` | K4. |
 | `protectPlayerEntities` | `true` | K5. |
@@ -109,7 +114,7 @@ A command never prunes a running world directly.
 | Id | Given | When | Then |
 |---|---|---|---|
 | S1 | A fixture world with explored areas and flown-over areas. | Dry run. | No file changes (checksums match). The report counts match the fixture's known values. |
-| S2 | Same world. | Prune. | Only chunks eligible under K1 are removed from `region`, `entities` and `poi`. Every kept chunk is byte-identical. The world opens, and the removed areas generate again. |
+| S2 | Same world. | Prune. | Only chunks that no keep rule keeps are removed from `region`, `entities` and `poi` (K1 alone, and with K2 and K8 at their defaults). Every kept chunk is byte-identical. The world opens, and the removed areas generate again. |
 | S3 | A tamed wolf sits in an otherwise unvisited chunk. | Prune. | The chunk is kept (K5). |
 | S4 | A structure start chunk is unvisited, but one of its pieces lies in a visited chunk. | Prune. | The start chunk is kept (K4). |
 | S5 | The process is killed during the rewrite. | Restart. | The journal resumes the run. Every region is either fully old or fully new, and the world opens. |

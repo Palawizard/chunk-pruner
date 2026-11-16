@@ -42,6 +42,7 @@ tasks.withType(Jar).configureEach {
                 'Implementation-Title': 'chunk-pruner',
                 'Implementation-Version': project.version,
                 'Minecraft-Version': project.minecraft_version,
+                'Loader-Name': project.loader_name,
                 'Main-Class': project.mod_main_class
         )
     }

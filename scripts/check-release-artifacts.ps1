@@ -8,8 +8,9 @@ param(
 )
 
 # Checks that every band and loader produced exactly one release JAR with its loader
-# metadata, the core classes and the loader entrypoint, that no metadata placeholder
-# was left unexpanded, and that `java -jar <jar> --help` prints the command-line help.
+# metadata, the core classes and the loader entrypoint and no test file, that no metadata
+# placeholder was left unexpanded, that `java -jar <jar> --help` prints the command-line help,
+# and that `java -jar <jar>` without --dry-run refuses to prune.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -48,6 +49,13 @@ function Get-EntrypointClass {
     "$packagePath/$Loader/$className.class"
 }
 
+$testSources = Join-Path $ProjectRoot 'core/src/test/java'
+$testClassPrefixes = @(Get-ChildItem -LiteralPath $testSources -Recurse -Filter '*.java' -File | ForEach-Object {
+        $relative = $_.FullName.Substring($testSources.Length + 1) -replace '\\', '/'
+        $relative.Substring(0, $relative.Length - 5)
+    })
+if ($testClassPrefixes.Count -eq 0) { throw "No test sources found in $testSources." }
+
 $failures = 0
 foreach ($band in (Get-VersionMatrix).bands) {
     if ($OnlyBands -and ($band.id -notin $OnlyBands)) { continue }
@@ -63,6 +71,14 @@ foreach ($band in (Get-VersionMatrix).bands) {
                 foreach ($entry in $required) {
                     if ($entries -notcontains $entry) { throw "$($jar.Name) is missing $entry." }
                 }
+                # Test code never ships: any class of core/src/test (the fixture tools, one of which
+                # rewrites worlds), the join client and anything from testmod/.
+                $testFiles = @($entries | Where-Object {
+                        $entry = $_
+                        $entry -like "$packagePath/core/fixture/*" -or $entry -like '*JoinBot*' -or $entry -like 'testmod/*' -or
+                        @($testClassPrefixes | Where-Object { $entry -eq "$_.class" -or $entry.StartsWith("$_`$") }).Count -gt 0
+                    })
+                if ($testFiles.Count -gt 0) { throw "$($jar.Name) contains test files: $($testFiles -join ', ')." }
                 $reader = New-Object System.IO.StreamReader($zip.GetEntry($metadataPath).Open())
                 try { $metadata = $reader.ReadToEnd() } finally { $reader.Dispose() }
                 $reader = New-Object System.IO.StreamReader($zip.GetEntry('META-INF/MANIFEST.MF').Open())
@@ -75,9 +91,17 @@ foreach ($band in (Get-VersionMatrix).bands) {
             if ($manifest -notmatch "(?m)^Main-Class: $([regex]::Escape($modProps['mod_main_class']))\s*$") {
                 throw "$($jar.Name): the manifest has no Main-Class: $($modProps['mod_main_class'])."
             }
-            $help = (& (Get-JavaExe -Version $band.java) -jar $jar.FullName --help 2>$null) -join "`n"
-            if ($LASTEXITCODE -ne 0 -or $help -notmatch 'Usage: java -jar') {
-                throw "$($jar.Name): java -jar --help exited with $LASTEXITCODE and printed no usage."
+            if ($manifest -notmatch "(?m)^Loader-Name: $loaderName\s*$") { throw "$($jar.Name): the manifest has no Loader-Name: $loaderName." }
+            $java = Get-JavaExe -Version $band.java
+            $help = Invoke-NativeCapture -FilePath $java -Arguments @('-jar', $jar.FullName, '--help')
+            if ($help.Code -ne 0 -or $help.Output -notmatch 'Usage: java -jar') {
+                throw "$($jar.Name): java -jar --help exited with $($help.Code) and printed no usage."
+            }
+            # This version only runs dry runs: without --dry-run the tool must refuse (exit code 3)
+            # before it looks at the world.
+            $refusal = Invoke-NativeCapture -FilePath $java -Arguments @('-jar', $jar.FullName, '--world', (Join-Path $ProjectRoot 'build/no-such-world'))
+            if ($refusal.Code -ne 3 -or $refusal.Output -notmatch 'Pruning is not available') {
+                throw "$($jar.Name): java -jar without --dry-run exited with $($refusal.Code) instead of refusing to prune."
             }
             Write-ResultLine -Status 'PASS' -Text "$label - $($jar.Name) ($($jar.Length) bytes)"
         } catch {
@@ -89,3 +113,5 @@ foreach ($band in (Get-VersionMatrix).bands) {
 
 if ($failures -gt 0) { throw "$failures release artifact check(s) failed." }
 Write-Host 'All release artifacts verified.' -ForegroundColor Green
+# The last java -jar run refused to prune on purpose (exit code 3); the script itself succeeded.
+exit 0

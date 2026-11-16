@@ -17,6 +17,10 @@ dependencies {
     testImplementation platform('org.junit:junit-bom:6.1.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Test only: the LZ4 codec Minecraft 1.21.1 bundles, to read the LZ4 fixture world.
+    testImplementation 'org.lz4:lz4-java:1.8.0'
+    // Test only: a JSON parser independent of the core's own, to read the reports.
+    testImplementation 'com.google.code.gson:gson:2.15.0'
 }
 
 java {
@@ -32,6 +36,7 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test', Test) {
     useJUnitPlatform()
+    systemProperty 'chunkpruner.fixtures', file('src/test/fixtures').absolutePath
 }
 
 spotless {
@@ -41,5 +46,23 @@ spotless {
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()
+    }
+}
+
+// Classpath of the test-only fixture tool, for scripts/check-pruned-world.ps1.
+tasks.register('writeFixtureClasspath') {
+    dependsOn 'testClasses'
+    def target = layout.buildDirectory.file('fixture-classpath.txt')
+    def classpath = sourceSets.test.runtimeClasspath
+    outputs.file target
+    doLast {
+        target.get().asFile.text = classpath.asPath
+    }
+}
+
+// Normal-terrain worlds made in CI (scripts/make-fixture-world.ps1), checked like the committed ones.
+if (project.hasProperty('generatedWorlds')) {
+    tasks.named('test', Test) {
+        systemProperty 'chunkpruner.generatedWorlds', file(project.property('generatedWorlds')).absolutePath
     }
 }

@@ -58,7 +58,12 @@ The scripts run on PowerShell 7 (`pwsh`, Windows, Linux or macOS) and on Windows
 ./scripts/prod-smoke.ps1 -BandId 1.21-1.21.4 -Loader neoforge    one band and loader on a real server
 ./scripts/prod-smoke-all.ps1 -SkipBuild                          every band and loader on a real server
 ./scripts/check-release-artifacts.ps1 -SkipBuild                 contents of the built JARs and java -jar --help
+./scripts/check-powershell-compat.ps1                            the scripts parse on Windows PowerShell 5.1
+./scripts/make-fixture-world.ps1 -Minecraft 1.21.1               make a fixture world on the vanilla server
+./scripts/check-pruned-world.ps1 -Minecraft 1.21.1 -World <path> open a pruned copy of a world on the vanilla server
 ```
+
+Fixture worlds and the tests built on them are described in [docs/TESTING.md](docs/TESTING.md). To run the core tests on normal-terrain worlds made with `make-fixture-world.ps1 -LevelType normal -OutputRoot build/generated-worlds`, pass `-PgeneratedWorlds=../build/generated-worlds` to `./gradlew test` in `core/`.
 
 Band ids and loaders are listed in `versions/version-matrix.json`. Server installs are cached in `build/prod-smoke`, and `prod-smoke-all.ps1` skips a JAR that already passed. To fix formatting, run `./gradlew spotlessApply` in `core/` or in a band folder.
 

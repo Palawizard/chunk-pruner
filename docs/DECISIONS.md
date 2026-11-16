@@ -40,7 +40,7 @@ Why: from 26.1 Fabric only uses Mojang names, and a single naming scheme keeps t
 
 ## ADR-005: Configuration
 
-Status: Accepted.
+Status: Accepted. Completed by ADR-CP-005, which replaces Gson with the core's own JSON code.
 
 One file, `config/chunkpruner.json`, read and written with the Gson bundled with Minecraft. Unknown keys are kept, missing keys get defaults. No in-game configuration screen.
 
@@ -113,3 +113,34 @@ Each band records two ranges in `versions/version-matrix.json`. `bandRange` is e
 Consequence: until the other patches are smoke tested, a release only installs on the compile target of each band (1.20.1, 1.21.1 and 26.3 for the Tier A bands).
 
 Why: a loader refuses a JAR outside its declared range, which is a clear message for the player. Declaring an untested patch instead risks a crash or, worse for this mod, a silent failure on a version it was never run on.
+
+## ADR-CP-005: JSON in the core
+
+Status: Accepted. Completes ADR-005.
+
+The config file and the JSON report are read and written by a small JSON reader and writer in the core (`core/config/Json`), with its own tests, instead of the Gson bundled with Minecraft. The mod and the command line tool use the same code and read the same file, `config/chunkpruner.json`. Unknown keys are kept, in their place, when the file is written back. Missing keys take their default. A known key with the wrong type or range is an error that names the key. A byte order mark at the start of the file is accepted.
+
+Why: the command line tool (E3) runs with `java -jar` and only has the mod JAR on its class path, so Gson is not there. Bundling Gson in the JAR would need its own record (ADR-003) and would ship a second copy next to Minecraft's. The config is a dozen keys and the report a tree of numbers and strings, which a few hundred lines of tested code cover.
+
+## ADR-CP-006: Keep the neighbours of played chunks (K8)
+
+Status: Accepted.
+
+K1 stays at threshold 0. A new rule, K8, keeps a chunk that K1 does not keep when it lies within `protectNeighborRadiusChunks` chunks (Chebyshev distance, default 1, 0 turns it off) of a chunk that K1 keeps. It has its own id and reason in the reports. The docs say that the value on disk is an underestimate and what a value of 0 does and does not prove (SPEC section 2).
+
+Why: `InhabitedTime` on disk is lower than the time players spent near a chunk, and can be 0 next to them. In the decompiled sources of 1.20.1, 1.21.1 and 26.3, `ChunkAccess.incrementInhabitedTime` does not mark the chunk unsaved, and `ChunkMap.save` skips chunks that are not unsaved. A new chunk is saved a few seconds after it is generated (10 s cooldown), then only when its region data changes, so the value on disk is the value at that last save. This is MC-127407 ("InhabitedTime not always updating in some chunks", still open, https://bugs.mojang.com/browse/MC-127407). The Inhabitor mod fixes it in game so that pruning by inhabited time can be trusted (https://modrinth.com/mod/inhabitor), and ChunkCleaner documents the same problem for its own InhabitedTime threshold (https://github.com/zeroBzeroT/ChunkCleaner).
+
+Measured on 2026-11-16 on the vanilla dedicated servers, with the join client standing about 40 s (800 ticks) at one place, `view-distance=5`, `simulation-distance=2`, and a glass `fill` over 4 chunks after 20 s. Of the 81 chunks within 4 chunks of the player:
+
+| Version | At 0 | 1 to 99 | 100 or more | Highest |
+|---|---|---|---|---|
+| 1.20.1 | 9 | 6 | 66 | 732 |
+| 1.21.1 | 0 | 31 | 50 | 718 |
+| 26.3 | 0 | 34 | 47 | 764 |
+
+The filled chunks have the highest values. `InhabitedTime` also grew 5 (1.20.1, 1.21.1) or 6 (26.3) chunks away from the player, beyond the simulation distance, and only the outer one or two rings of the loaded area stayed at 0.
+
+A chunk at 0 was not saved again after a player came near, so no block of it was changed by a player, and the game generates its terrain again from the seed. Its entities are saved apart, in `entities/`, so they may have changed: extending K5 to the entities a player may have placed or moved is planned before pruning is offered. K8 keeps the gaps inside played areas, the 1.20.1 case above, at the cost of one ring of chunks around them.
+
+Options considered: a higher K1 threshold by default (it does not keep the zero chunks inside a played area, and the right value depends on how long players stay); keeping every chunk that has an entity (it would keep most flown-over areas, where animals spawn at generation).
+

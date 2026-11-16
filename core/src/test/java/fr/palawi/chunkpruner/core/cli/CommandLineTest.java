@@ -16,6 +16,7 @@ class CommandLineTest {
         return CommandLine.run(
                 args,
                 "0.1.0",
+                "fabric",
                 new PrintStream(out, true, StandardCharsets.UTF_8),
                 new PrintStream(err, true, StandardCharsets.UTF_8));
     }
@@ -52,8 +53,20 @@ class CommandLineTest {
 
     @Test
     void unknownOptionIsRejected() {
+        assertEquals(CommandLine.EXIT_USAGE, run("--frobnicate"));
+        assertTrue(stderr().contains("Unknown option: --frobnicate"));
+    }
+
+    @Test
+    void worldWithoutPathIsRejected() {
         assertEquals(CommandLine.EXIT_USAGE, run("--world"));
-        assertTrue(stderr().contains("Unknown option: --world"));
+        assertTrue(stderr().contains("--world needs a path."));
+    }
+
+    @Test
+    void dryRunNeedsAWorld() {
+        assertEquals(CommandLine.EXIT_USAGE, run("--dry-run"));
+        assertTrue(stderr().contains("--world <path> is required."));
     }
 
     @Test

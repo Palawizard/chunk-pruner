@@ -14,6 +14,8 @@ In development. There is no release yet.
 
 Every chunk records how long players have spent near it (its inhabited time). Chunks that were only seen from a distance, while flying or during pregeneration, have an inhabited time of zero and usually make up most of a world's size. Chunk Pruner removes them while the world is not loaded. The game generates them again, from the same seed, when someone goes there.
 
+The game only saves that time when it saves the chunk for another reason, so a chunk next to a player can also show zero. Chunk Pruner keeps the chunks right next to played ones as well, and the exact rules are in [docs/SPEC.md](docs/SPEC.md).
+
 Chunks near players, spawn, force-loaded areas and structures in use are always kept, and so is anything the mod cannot read. Every run can be done as a dry run first, and every modified file is backed up.
 
 Areas that are pruned after new worldgen mods are added will generate with those mods next time.
@@ -49,8 +51,10 @@ In singleplayer, use the "Prune unvisited chunks" button on the Edit World scree
 From a terminal, with the world closed:
 
 ```sh
-java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path-to-world> --dry-run
+java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path-to-world> --dry-run [--config <file>]
 ```
+
+Use the Java version of the JAR's Minecraft band (17, 21 or 25). The report goes to `<world>/chunkpruner/reports/`. During development the command line only runs dry runs and refuses to prune.
 
 Commands require permission level 4 by default. The exact rules are in [docs/SPEC.md](docs/SPEC.md).
 

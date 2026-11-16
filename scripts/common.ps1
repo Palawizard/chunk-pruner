@@ -97,6 +97,21 @@ function Invoke-Gradle {
     }
 }
 
+function Invoke-NativeCapture {
+    # Runs a native command and returns its exit code and output (stdout and stderr). Windows
+    # PowerShell 5.1 turns each stderr line of a command redirected with 2>&1 into an error record,
+    # which stops a script running with $ErrorActionPreference = 'Stop', so it is relaxed here.
+    param([string]$FilePath, [string[]]$Arguments)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object { "$_" })
+        return @{ Code = $LASTEXITCODE; Output = ($output -join "`n") }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Write-ResultLine {
     param([string]$Status, [string]$Text)
     $color = switch ($Status) { 'PASS' { 'Green' } 'FAIL' { 'Red' } default { 'Yellow' } }
