@@ -144,3 +144,28 @@ A chunk at 0 was not saved again after a player came near, so no block of it was
 
 Options considered: a higher K1 threshold by default (it does not keep the zero chunks inside a played area, and the right value depends on how long players stay); keeping every chunk that has an entity (it would keep most flown-over areas, where animals spawn at generation).
 
+
+## ADR-CP-007: What K5 keeps, and what world generation places
+
+Status: Accepted. Completes ADR-CP-006.
+
+K5 keeps a chunk when its `entities/` entry holds an entity that a player cares about (a custom name, an owner, a fox's trust, an allay's liked player, a leash, a bucket release, an iron golem built by a player), that is persistent, or whose type a player places, builds or makes with commands (armor stands, frames, paintings, leash knots, end crystals, minecarts, boats and rafts, items on the ground, built golems, display and marker entities, and on 26.3 mannequins and cushions). Persistent entities and placed types do not keep the chunk when world generation placed them: the same entity, with no player mark, inside the structure that places it. The full list and the structures are in SPEC section 2.
+
+Why: the decision of 2026-11-16 extends K5 to the entities a player may have placed or moved, because a chunk at `InhabitedTime` 0 may still have changed entities (ADR-CP-006). The decompiled sources and the structure templates of 1.20.1, 1.21.1 and 26.3 show that world generation also places such entities, and marks many persistent:
+
+- Structure templates carry their entities with their data. Village pieces hold cats, cows, pigs, sheep and horses with `PersistenceRequired` 1, villagers, zombie villagers, iron golems, a camel (desert) and armor stands (taiga); igloos a villager and a zombie villager; pillager outposts allays and an iron golem; bastions piglins, piglin brutes and a hoglin; 26.3 abandoned camps cushions. A 1.20.1 fixture world has two village cows with `PersistenceRequired` 1 in a chunk at `InhabitedTime` 0.
+- Structure code adds others: witches and cats in swamp huts (`setPersistenceRequired`), elder guardians in monuments (always persistent), drowned in ocean ruins (persistent, with a zombie nautilus on 26.3), evokers, vindicators and allays in woodland mansions (persistent), shulkers and an item frame with an elytra in end cities, chest minecarts with a loot table in mineshafts, and end crystals on the end spikes (`ShowBottom` true; `EndCrystalItem` sets it to false).
+
+Without the exception, every generated village, mansion, monument and mineshaft a player only flew over would be kept. Measured on the normal-terrain worlds made in CI (ARCHITECTURE, Performance and measurements): K5 keeps 0 to 0.06 percent of the chunks that K1 and K8 alone would prune, and 0.11 to 0.26 percent without the exception, all of it mineshaft chest minecarts.
+
+The exception needs both the entity and the structure, so a player's armor stand outside a taiga village, or a chest minecart that was opened (its loot table is gone), still keeps its chunk. An entity of the list that wandered out of its structure keeps its chunk too.
+
+Options considered: keeping every persistent entity (it keeps every generated village); keeping only named, owned and leashed entities (it loses minecarts, boats, armor stands and items a player left); a list of player entity types without the structure check (an armor stand in a taiga village and a mineshaft minecart would keep their chunks).
+
+## ADR-CP-008: Engine.run stays public, the region writer does not
+
+Status: Accepted.
+
+`Engine.run` stays public in the published JAR. The region writer moves from `core/anvil` to `core/engine` and is package-private: the only way to rewrite a region file is `Engine.run`, which takes the session lock, plans, checks free space, backs up (unless the config turns it off), writes the journal and only then rewrites.
+
+Why: the mod's own entry points (the command line now, the startup hook and the singleplayer screen in M3) all go through `Engine.run`, and with backups and the journal it is the safe path. Another mod that calls it gets the same checks. A public region writer would let a caller rewrite region files with no backup and no journal. Java access rules do not stop reflection; they keep a direct call out of reach by accident.
