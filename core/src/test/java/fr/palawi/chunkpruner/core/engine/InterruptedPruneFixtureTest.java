@@ -166,7 +166,9 @@ class InterruptedPruneFixtureTest {
             return false;
         }
         try (Stream<Path> files = Files.list(reports)) {
-            return files.anyMatch(p -> p.getFileName().toString().endsWith(".json"));
+            // The run wrote its report when both files are there (the JSON one first).
+            return files.anyMatch(p -> p.getFileName().toString().endsWith(".json")
+                    && Files.exists(p.resolveSibling(p.getFileName().toString().replace(".json", ".txt"))));
         }
     }
 
