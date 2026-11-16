@@ -36,6 +36,9 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test', Test) {
     useJUnitPlatform()
+    // The test reader keeps the full NBT tree of every chunk of a world; the normal-terrain
+    // worlds need more than the default 512 MB.
+    maxHeapSize = '2g'
     systemProperty 'chunkpruner.fixtures', file('src/test/fixtures').absolutePath
 }
 
