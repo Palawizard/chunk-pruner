@@ -140,6 +140,29 @@ public final class ReferenceWorld {
         }
     }
 
+    /** The End folder, found from what is on disk like the overworld. */
+    public Path end() {
+        Path modern = world.resolve("dimensions/minecraft/the_end");
+        return Files.isDirectory(modern) ? modern : world.resolve("DIM1");
+    }
+
+    /** Every entry of one storage of any dimension folder. */
+    public static List<Chunk> chunksIn(Path dimension, String storage, boolean lz4) throws IOException {
+        List<Chunk> result = new ArrayList<>();
+        Path folder = dimension.resolve(storage);
+        if (!Files.isDirectory(folder)) {
+            return result;
+        }
+        try (Stream<Path> files = Files.list(folder)) {
+            for (Path file : files.filter(p -> p.getFileName().toString().matches("r\\.-?\\d+\\.-?\\d+\\.mca"))
+                    .sorted()
+                    .toList()) {
+                result.addAll(chunks(storage, file, lz4));
+            }
+        }
+        return result;
+    }
+
     public List<Path> files(String storage) throws IOException {
         Path folder = overworld.resolve(storage);
         if (!Files.isDirectory(folder)) {

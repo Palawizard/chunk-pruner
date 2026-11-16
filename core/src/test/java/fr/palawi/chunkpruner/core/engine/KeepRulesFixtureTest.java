@@ -13,8 +13,10 @@ import fr.palawi.chunkpruner.core.fixture.ReferenceWorld.Chunk;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -44,6 +46,19 @@ class KeepRulesFixtureTest {
         {6, "nothing", false}
     };
 
+    /** Chunk x of row z=-12: player marks, passengers and the wandering trader's llama. */
+    private static final Object[][] MARKS = {
+        {-7, "fox that trusts the player", true},
+        {-6, "allay that likes the player", true},
+        {-5, "axolotl released from a bucket", true},
+        {-4, "iron golem built by a player", true},
+        {-3, "iron golem not built by a player", false},
+        {-2, "horse ridden by a named pig", true},
+        {-1, "horse ridden by a plain pig", false},
+        {0, "wandering trader with its llama leashed to it", false},
+        {1, "trader llama leashed to a fence", true}
+    };
+
     @TempDir
     Path temp;
 
@@ -63,6 +78,22 @@ class KeepRulesFixtureTest {
         for (Object[] setup : ROW) {
             assertEquals(0, region.get(ReferenceWorld.key((int) setup[0], -10)).inhabitedTime(), (String) setup[1]);
         }
+        for (Object[] setup : MARKS) {
+            assertEquals(0, region.get(ReferenceWorld.key((int) setup[0], -12)).inhabitedTime(), (String) setup[1]);
+        }
+        List<Chunk> end = ReferenceWorld.chunksIn(world.end(), "region", false);
+        assertTrue(end.stream().allMatch(c -> c.inhabitedTime() == 0), "nobody went to the End");
+        long spikeCrystals = 0;
+        for (Chunk c : ReferenceWorld.chunksIn(world.end(), "entities", false)) {
+            for (Object e : (List<?>) c.nbt().getOrDefault("Entities", List.of())) {
+                Map<?, ?> entity = (Map<?, ?>) e;
+                if ("minecraft:end_crystal".equals(entity.get("id")) && c.z() < 20) {
+                    assertEquals((byte) 1, entity.get("ShowBottom"), "the game shows the base of spike crystals");
+                    spikeCrystals++;
+                }
+            }
+        }
+        assertEquals(10, spikeCrystals, "the end spikes have their ten crystals");
     }
 
     /** Defaults: the reasons the test reader gives match how the world was made. */
@@ -76,6 +107,10 @@ class KeepRulesFixtureTest {
         assertEquals("K3", expected.ruleByChunk.get(ReferenceWorld.key(-9, -10)), "the force-loaded chunk");
         for (Object[] setup : ROW) {
             String rule = expected.ruleByChunk.get(ReferenceWorld.key((int) setup[0], -10));
+            assertEquals((boolean) setup[2] ? "K5" : null, rule, (String) setup[1]);
+        }
+        for (Object[] setup : MARKS) {
+            String rule = expected.ruleByChunk.get(ReferenceWorld.key((int) setup[0], -12));
             assertEquals((boolean) setup[2] ? "K5" : null, rule, (String) setup[1]);
         }
     }
@@ -93,6 +128,12 @@ class KeepRulesFixtureTest {
                     defaults.contains(ReferenceWorld.key((int) setup[0], -10)),
                     "after prune: " + setup[1]);
         }
+        for (Object[] setup : MARKS) {
+            assertEquals(
+                    (boolean) setup[2],
+                    defaults.contains(ReferenceWorld.key((int) setup[0], -12)),
+                    "after prune: " + setup[1]);
+        }
         Set<Long> noRules = remainingAfterPrune(
                 name,
                 "{\"protectForcedChunks\": false, \"protectStructures\": false, \"protectPlayerEntities\": false}");
@@ -102,6 +143,55 @@ class KeepRulesFixtureTest {
             assertTrue(!noRules.contains(ReferenceWorld.key((int) setup[0], -10)), "without K5: " + setup[1]);
         }
         assertTrue(noRules.contains(ReferenceWorld.key(5, 14)), "K1 still keeps the street");
+    }
+
+    /**
+     * The End, where nobody went: the end spike crystals the game placed (base shown) do not keep
+     * their chunks, the crystal placed without its base and the frame with an elytra, outside an
+     * end city, do. Every other End chunk goes.
+     */
+    @ParameterizedTest
+    @MethodSource("worlds")
+    void inTheEndOnlyThePlayerSetupsKeepTheirChunks(String name) throws Exception {
+        Path world = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end"));
+        Engine.run(settings(world, Config.defaults(), RunMode.PRUNE));
+        Set<Long> left = new HashSet<>();
+        for (Chunk c : ReferenceWorld.chunksIn(ReferenceWorld.read(world).end(), "region", false)) {
+            left.add(c.key());
+        }
+        assertEquals(Set.of(ReferenceWorld.key(1, 20), ReferenceWorld.key(2, 20)), left);
+
+        Path off = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end-off"));
+        Engine.run(settings(off, Config.fromJson("{\"protectPlayerEntities\": false}"), RunMode.PRUNE));
+        assertTrue(ReferenceWorld.chunksIn(ReferenceWorld.read(off).end(), "region", false)
+                .isEmpty());
+    }
+
+    /**
+     * The plains village of the committed 1.20.1 world placed two cows with PersistenceRequired 1
+     * in a chunk at InhabitedTime 0: world generation, so they do not keep it (ADR-CP-007).
+     */
+    @Test
+    void villageAnimalsDoNotKeepTheirChunk() throws Exception {
+        ReferenceWorld reference = ReferenceWorld.read(FixtureWorlds.committed("1.20.1"));
+        Map<Long, Chunk> region = byKey(reference.chunks("region", false));
+        Long pen = null;
+        for (Chunk c : reference.chunks("entities", false)) {
+            boolean persistentCow = ((List<?>) c.nbt().getOrDefault("Entities", List.of()))
+                    .stream()
+                            .anyMatch(e -> "minecraft:cow".equals(((Map<?, ?>) e).get("id"))
+                                    && Byte.valueOf((byte) 1).equals(((Map<?, ?>) e).get("PersistenceRequired")));
+            if (persistentCow && region.get(c.key()).inhabitedTime() == 0) {
+                pen = c.key();
+            }
+        }
+        assertTrue(pen != null, "the fixture has the village cows");
+        Expected expected = Expected.compute(reference, Expected.Rules.defaults(), true);
+        assertEquals(null, expected.ruleByChunk.get(pen), "no rule keeps the pen");
+        Path world = FixtureWorlds.copy(FixtureWorlds.committed("1.20.1"), temp.resolve("village"));
+        Engine.run(settings(world, Config.defaults(), RunMode.PRUNE));
+        final long key = pen;
+        assertTrue(ReferenceWorld.read(world).chunks("region", false).stream().noneMatch(c -> c.key() == key));
     }
 
     /** S8: the datapack dimension is left alone unless the config lists it. */
@@ -137,7 +227,7 @@ class KeepRulesFixtureTest {
         return sums;
     }
 
-    private static Map<Long, Chunk> byKey(java.util.List<Chunk> chunks) {
+    private static Map<Long, Chunk> byKey(List<Chunk> chunks) {
         Map<Long, Chunk> map = new HashMap<>();
         for (Chunk c : chunks) {
             map.put(c.key(), c);
