@@ -5,7 +5,6 @@ import fr.palawi.chunkpruner.core.anvil.ChunkReader.ChunkFields;
 import fr.palawi.chunkpruner.core.anvil.ChunkReader.EntityFields;
 import fr.palawi.chunkpruner.core.anvil.RegionFile;
 import fr.palawi.chunkpruner.core.anvil.RegionFile.ChunkEntry;
-import fr.palawi.chunkpruner.core.anvil.RegionWriter;
 import fr.palawi.chunkpruner.core.report.DimensionReport;
 import fr.palawi.chunkpruner.core.report.Storage;
 import fr.palawi.chunkpruner.core.report.StorageReport;

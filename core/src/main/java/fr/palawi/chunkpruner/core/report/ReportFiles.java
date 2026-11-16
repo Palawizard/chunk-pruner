@@ -25,6 +25,16 @@ public final class ReportFiles {
         return json;
     }
 
+    /** Writes an already rendered report, for a run finished from its journal. */
+    public static Path write(Path world, String runId, String json, String text) throws IOException {
+        Path folder = folder(world);
+        Files.createDirectories(folder);
+        Path jsonFile = folder.resolve(runId + ".json");
+        writeAtomically(jsonFile, json);
+        writeAtomically(folder.resolve(runId + ".txt"), text);
+        return jsonFile;
+    }
+
     private static void writeAtomically(Path target, String text) throws IOException {
         Path temp = target.resolveSibling(target.getFileName() + ".tmp");
         Files.writeString(temp, text, StandardCharsets.UTF_8);

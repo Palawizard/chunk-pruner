@@ -97,23 +97,29 @@ class SafetyFixtureTest {
         }
     }
 
-    /** S11: free space is injected; the threshold is the size of the files to change plus 10 percent. */
+    /**
+     * S11: free space is injected. The threshold is the size of the files to change (the backup
+     * copies them) plus the largest of them (the rewrite writes it again before it moves it over),
+     * plus 10 percent.
+     */
     @Test
     void pruneStopsBeforeAnyChangeWhenSpaceIsShort() throws Exception {
         Path world = world();
         ReferenceWorld reference = ReferenceWorld.read(world);
         Expected expected = Expected.compute(reference, 0, 4, 1, true);
         long toChange = 0;
+        long largest = 0;
         for (String storage : ReferenceWorld.STORAGES) {
             for (Path file : reference.files(storage)) {
                 boolean changes = ReferenceWorld.chunks(storage, file, true).stream()
                         .anyMatch(c -> expected.pruned.contains(c.key()));
                 if (changes) {
                     toChange += Files.size(file);
+                    largest = Math.max(largest, Files.size(file));
                 }
             }
         }
-        long required = (toChange * 110 + 99) / 100;
+        long required = ((toChange + largest) * 110 + 99) / 100;
         Map<String, String> before = ReferenceWorld.checksums(world);
 
         RunSettings tooSmall = settings(world, Config.defaults(), RunMode.PRUNE).withFreeSpace(folder -> required - 1);

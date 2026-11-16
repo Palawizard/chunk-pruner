@@ -29,6 +29,7 @@ public final class ReportJson {
         root.put("versions", versions);
         root.put("lz4Available", report.lz4Available());
         root.put("config", report.config());
+        root.put("backup", report.backup());
         root.put("totals", totals(report));
         List<Object> dimensions = new ArrayList<>();
         for (DimensionReport dimension : report.dimensions()) {
