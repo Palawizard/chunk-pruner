@@ -3,6 +3,7 @@ package fr.palawi.chunkpruner.core.cli;
 import fr.palawi.chunkpruner.core.config.Config;
 import fr.palawi.chunkpruner.core.config.JsonException;
 import fr.palawi.chunkpruner.core.engine.Engine;
+import fr.palawi.chunkpruner.core.engine.NotEnoughSpaceException;
 import fr.palawi.chunkpruner.core.engine.RunContext;
 import fr.palawi.chunkpruner.core.engine.RunMode;
 import fr.palawi.chunkpruner.core.engine.RunSettings;
@@ -14,8 +15,9 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 
 /**
- * The command line tool (E3). This version only runs dry runs: pruning stays off until backups
- * and the resume journal exist, so a run without {@code --dry-run} is refused.
+ * The command line tool (E3): a dry run with {@code --dry-run}, a prune without it. A prune backs
+ * the changed files up and keeps a journal (SPEC section 4); when the world has the journal of an
+ * interrupted run, that run is finished first and no new one starts.
  */
 public final class CommandLine {
     public static final int EXIT_OK = 0;
@@ -65,24 +67,35 @@ public final class CommandLine {
             err.println("Run with --help to see the options.");
             return EXIT_USAGE;
         }
-        if (!dryRun) {
-            err.println(
-                    "Pruning is not available in this version. Only a dry run works: add --dry-run to get a report.");
-            err.println("Pruning comes once every changed file is backed up and an interrupted run can resume.");
-            return EXIT_REFUSED;
-        }
-        return dryRun(world, config, version, loader, out, err);
+        return run(world, config, dryRun ? RunMode.DRY_RUN : RunMode.PRUNE, version, loader, out, err);
     }
 
-    private static int dryRun(
-            String world, String configFile, String version, String loader, PrintStream out, PrintStream err) {
+    private static int run(
+            String world,
+            String configFile,
+            RunMode mode,
+            String version,
+            String loader,
+            PrintStream out,
+            PrintStream err) {
         try {
             Config config = configFile == null ? Config.defaults() : Config.load(Path.of(configFile));
-            RunSettings settings = RunSettings.of(Path.of(world), config, RunMode.DRY_RUN, RunContext.E3)
-                    .withVersions(loader, version);
+            RunSettings settings =
+                    RunSettings.of(Path.of(world), config, mode, RunContext.E3).withVersions(loader, version);
             Engine.RunResult result = Engine.run(settings);
-            out.println(result.summary());
-            out.println("This was a dry run: no file was changed.");
+            if (result.resumed()) {
+                out.println("This world had an interrupted prune run. It was finished from its journal:");
+                out.println(result.summary());
+                out.println("No new run was started. Run the command again to start one.");
+            } else {
+                out.println(result.summary());
+                if (mode == RunMode.DRY_RUN) {
+                    out.println("This was a dry run: no file was changed.");
+                } else if (result.report().backup() != null) {
+                    out.println("The changed files were backed up to "
+                            + Path.of(world).resolve(result.report().backup()));
+                }
+            }
             out.println("Report: " + result.textReport());
             out.println("JSON report: " + result.jsonReport());
             return EXIT_OK;
@@ -92,11 +105,17 @@ public final class CommandLine {
         } catch (JsonException e) {
             err.println("The config file " + configFile + " is not valid: " + e.getMessage());
             return EXIT_ERROR;
+        } catch (NotEnoughSpaceException e) {
+            err.println(e.getMessage());
+            return EXIT_REFUSED;
         } catch (WorldException e) {
             err.println(e.getMessage());
             return EXIT_ERROR;
         } catch (IOException | InvalidPathException e) {
-            err.println("The dry run failed: " + e.getMessage());
+            err.println((mode == RunMode.DRY_RUN ? "The dry run" : "The prune run") + " failed: " + e.getMessage());
+            if (mode == RunMode.PRUNE) {
+                err.println("If it stopped while rewriting, the next run finishes it from chunkpruner/journal.json.");
+            }
             return EXIT_ERROR;
         }
     }
@@ -107,18 +126,23 @@ public final class CommandLine {
         return title + nl
                 + nl
                 + "Removes chunks that nobody ever played in from a Minecraft world that is not running." + nl
-                + "This version only reports what would be removed (dry run)." + nl
+                + "The game generates them again from the seed when a player goes there." + nl
                 + nl
-                + "Usage: java -jar <chunk-pruner JAR> --world <path> --dry-run [--config <file>]" + nl
+                + "Usage: java -jar <chunk-pruner JAR> --world <path> [--dry-run] [--config <file>]" + nl
                 + nl
                 + "Options:" + nl
                 + "  --world <path>   World folder (the one with level.dat). The world must be closed." + nl
-                + "  --dry-run        Scan the world and write a report to <world>/chunkpruner/reports." + nl
-                + "                   No other file is changed." + nl
+                + "  --dry-run        Only scan the world and write a report to <world>/chunkpruner/reports." + nl
+                + "                   No other file is changed. Start with this." + nl
                 + "  --config <file>  Config file (config/chunkpruner.json of the server or game folder)." + nl
                 + "                   Without it, the default config is used." + nl
                 + "  -h, --help       Show this help and exit." + nl
                 + nl
-                + "Exit codes: 0 done, 1 error, 2 bad options, 3 refused (world in use, or no --dry-run)." + nl;
+                + "Without --dry-run the chunks are removed. Every changed file is first copied to" + nl
+                + "<world>/chunkpruner/backups/<run>, and chunkpruner/journal.json lets an interrupted" + nl
+                + "run finish on the next start. Copy a backup back over the world to undo a run." + nl
+                + nl
+                + "Exit codes: 0 done, 1 error, 2 bad options, 3 refused (world in use, or not enough" + nl
+                + "free disk space)." + nl;
     }
 }

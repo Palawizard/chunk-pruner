@@ -137,14 +137,26 @@ class SafetyFixtureTest {
         assertEquals(expected.pruned.size(), pruned.report().pruned());
     }
 
+    /** E3 prunes without --dry-run, after the backup, and says where the backup is. */
     @Test
-    void commandLineRefusesToPruneWithoutDryRun() throws Exception {
+    void commandLinePrunesWithABackup() throws Exception {
         Path world = world();
-        Map<String, String> before = ReferenceWorld.checksums(world);
-        assertEquals(CommandLine.EXIT_REFUSED, cli("--world", world.toString()));
-        assertTrue(err.toString(StandardCharsets.UTF_8).contains("Pruning is not available in this version"));
-        assertEquals(before, ReferenceWorld.checksums(world));
-        assertFalse(Files.exists(ReportFiles.folder(world)));
+        Expected expected = Expected.compute(ReferenceWorld.read(world), 0, 4, 1, true);
+        assertEquals(CommandLine.EXIT_OK, cli("--world", world.toString()), err.toString(StandardCharsets.UTF_8));
+        String output = out.toString(StandardCharsets.UTF_8);
+        assertTrue(output.contains("The changed files were backed up to "), output);
+        assertEquals(expected.pruned.size(), chunksMissing(world), "the expected chunks are gone");
+        assertTrue(Files.isDirectory(world.resolve("chunkpruner/backups")));
+        assertFalse(Files.exists(world.resolve("chunkpruner/journal.json")));
+        assertTrue(Files.exists(ReportFiles.folder(world)));
+    }
+
+    private long chunksMissing(Path world) throws Exception {
+        long now = ReferenceWorld.read(world).chunks("region", true).size();
+        return ReferenceWorld.read(FixtureWorlds.committed("1.21.1"))
+                        .chunks("region", true)
+                        .size()
+                - now;
     }
 
     @Test

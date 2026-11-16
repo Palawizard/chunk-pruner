@@ -10,7 +10,8 @@ param(
 # Checks that every band and loader produced exactly one release JAR with its loader
 # metadata, the core classes and the loader entrypoint and no test file, that no metadata
 # placeholder was left unexpanded, that `java -jar <jar> --help` prints the command-line help,
-# and that `java -jar <jar>` without --dry-run refuses to prune.
+# and that `java -jar <jar>` runs a dry run and then a prune on a copy of the committed fixture
+# world of the band's Minecraft version, leaving a backup and no journal.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -97,12 +98,22 @@ foreach ($band in (Get-VersionMatrix).bands) {
             if ($help.Code -ne 0 -or $help.Output -notmatch 'Usage: java -jar') {
                 throw "$($jar.Name): java -jar --help exited with $($help.Code) and printed no usage."
             }
-            # This version only runs dry runs: without --dry-run the tool must refuse (exit code 3)
-            # before it looks at the world.
-            $refusal = Invoke-NativeCapture -FilePath $java -Arguments @('-jar', $jar.FullName, '--world', (Join-Path $ProjectRoot 'build/no-such-world'))
-            if ($refusal.Code -ne 3 -or $refusal.Output -notmatch 'Pruning is not available') {
-                throw "$($jar.Name): java -jar without --dry-run exited with $($refusal.Code) instead of refusing to prune."
+            if ($help.Output -notmatch 'chunkpruner/backups') { throw "$($jar.Name): the help does not mention the backups." }
+            $fixture = Join-Path $ProjectRoot "core/src/test/fixtures/worlds/$($band.compileTarget)/world"
+            $copy = Join-Path $ProjectRoot "build/artifact-check/$($jar.BaseName)/world"
+            if (Test-Path -LiteralPath (Split-Path -Parent $copy)) { Remove-Item -LiteralPath (Split-Path -Parent $copy) -Recurse -Force }
+            New-Item -ItemType Directory -Path (Split-Path -Parent $copy) -Force | Out-Null
+            Copy-Item -LiteralPath $fixture -Destination $copy -Recurse
+            $dry = Invoke-NativeCapture -FilePath $java -Arguments @('-jar', $jar.FullName, '--world', $copy, '--dry-run')
+            if ($dry.Code -ne 0 -or $dry.Output -notmatch 'Would remove') {
+                throw "$($jar.Name): the dry run exited with $($dry.Code): $($dry.Output)"
             }
+            $prune = Invoke-NativeCapture -FilePath $java -Arguments @('-jar', $jar.FullName, '--world', $copy)
+            if ($prune.Code -ne 0 -or $prune.Output -notmatch 'Removed [0-9,]+ unvisited chunks' -or $prune.Output -notmatch 'backed up to') {
+                throw "$($jar.Name): the prune exited with $($prune.Code): $($prune.Output)"
+            }
+            if (-not (Test-Path -LiteralPath (Join-Path $copy 'chunkpruner/backups'))) { throw "$($jar.Name): the prune left no backup." }
+            if (Test-Path -LiteralPath (Join-Path $copy 'chunkpruner/journal.json')) { throw "$($jar.Name): the prune left its journal." }
             Write-ResultLine -Status 'PASS' -Text "$label - $($jar.Name) ($($jar.Length) bytes)"
         } catch {
             $failures++
@@ -113,5 +124,4 @@ foreach ($band in (Get-VersionMatrix).bands) {
 
 if ($failures -gt 0) { throw "$failures release artifact check(s) failed." }
 Write-Host 'All release artifacts verified.' -ForegroundColor Green
-# The last java -jar run refused to prune on purpose (exit code 3); the script itself succeeded.
 exit 0

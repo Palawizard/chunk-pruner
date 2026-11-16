@@ -51,10 +51,10 @@ In singleplayer, use the "Prune unvisited chunks" button on the Edit World scree
 From a terminal, with the world closed:
 
 ```sh
-java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path-to-world> --dry-run [--config <file>]
+java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path-to-world> [--dry-run] [--config <file>]
 ```
 
-Use the Java version of the JAR's Minecraft band (17, 21 or 25). The report goes to `<world>/chunkpruner/reports/`. During development the command line only runs dry runs and refuses to prune.
+Use the Java version of the JAR's Minecraft band (17, 21 or 25). Start with `--dry-run`: it only writes a report to `<world>/chunkpruner/reports/`. Without it the chunks are removed, after every changed file is copied to `<world>/chunkpruner/backups/<run>`. Copy a backup back over the world to undo a run. If a run is interrupted, the next one finishes it first.
 
 Commands require permission level 4 by default. The exact rules are in [docs/SPEC.md](docs/SPEC.md).
 
