@@ -3,3 +3,8 @@
 *.cmd text eol=crlf
 *.jar binary
 gradlew text eol=lf
+*.mca binary
+*.mcc binary
+*.dat binary
+*.dat_old binary
+session.lock binary
