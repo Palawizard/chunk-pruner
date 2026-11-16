@@ -82,7 +82,14 @@ public final class ChunkReader {
             }
             compressed = new ByteArrayInputStream(sectors.array(), 5, length - 1);
         }
-        try (InputStream data = compression.open(id, compressed)) {
+        InputStream opened;
+        try {
+            opened = compression.open(id, compressed);
+        } catch (IOException | RuntimeException e) {
+            compressed.close();
+            throw e;
+        }
+        try (InputStream data = opened) {
             Map<String, Object> values = NbtFieldReader.read(data, FIELDS);
             data.transferTo(java.io.OutputStream.nullOutputStream());
             return fields(values, region, entry, external);

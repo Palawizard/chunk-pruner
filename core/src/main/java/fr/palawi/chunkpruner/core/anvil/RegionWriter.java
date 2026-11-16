@@ -15,10 +15,11 @@ import java.util.Set;
 
 /**
  * Rebuilds a region file with only some of its chunks. The sectors of each kept chunk are copied
- * byte for byte, in their original order, and only the location table is rebuilt (timestamps are
- * copied). The new file is written next to the old one as {@code .tmp}, forced to disk, then
- * moved over it. When no chunk is left, the file is deleted. The external {@code .mcc} payload
- * of each removed chunk is deleted with it.
+ * byte for byte, one chunk after the other in the order of their location entries, and only the
+ * location table is rebuilt (timestamps are copied). The new file is written next to the old one
+ * as {@code .tmp}, forced to disk, then moved over it once the old file is closed. When no chunk
+ * is left, the file is deleted. The external {@code .mcc} payload of each removed chunk is deleted
+ * with it.
  */
 public final class RegionWriter {
     private RegionWriter() {}
@@ -44,7 +45,9 @@ public final class RegionWriter {
         }
         List<ChunkEntry> kept = new ArrayList<>();
         List<Path> externalFiles = new ArrayList<>();
-        try (FileChannel source = FileChannel.open(region.path(), StandardOpenOption.READ)) {
+        Path target = region.path();
+        Path temp = target.resolveSibling(target.getFileName() + ".tmp");
+        try (FileChannel source = FileChannel.open(target, StandardOpenOption.READ)) {
             for (ChunkEntry entry : region.entries()) {
                 if (!removed.contains(entry.index())) {
                     kept.add(entry);
@@ -52,20 +55,21 @@ public final class RegionWriter {
                     externalFiles.add(ChunkReader.externalFile(region, entry));
                 }
             }
-            if (kept.isEmpty()) {
-                Files.delete(region.path());
-            } else {
-                write(region, kept, source);
+            if (!kept.isEmpty()) {
+                write(target, temp, kept, source);
             }
+        }
+        if (kept.isEmpty()) {
+            Files.delete(target);
+        } else {
+            replace(temp, target);
         }
         for (Path external : externalFiles) {
             Files.deleteIfExists(external);
         }
     }
 
-    private static void write(RegionFile region, List<ChunkEntry> kept, FileChannel source) throws IOException {
-        Path target = region.path();
-        Path temp = target.resolveSibling(target.getFileName() + ".tmp");
+    private static void write(Path target, Path temp, List<ChunkEntry> kept, FileChannel source) throws IOException {
         ByteBuffer header = ByteBuffer.allocate(RegionFile.HEADER_BYTES);
         int nextSector = 2;
         for (ChunkEntry entry : kept) {
@@ -91,6 +95,9 @@ public final class RegionWriter {
             }
             out.force(true);
         }
+    }
+
+    private static void replace(Path temp, Path target) throws IOException {
         try {
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException e) {
