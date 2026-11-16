@@ -104,3 +104,5 @@ foreach ($band in (Get-VersionMatrix).bands) {
 
 if ($failures -gt 0) { throw "$failures release artifact check(s) failed." }
 Write-Host 'All release artifacts verified.' -ForegroundColor Green
+# The last java -jar run refused to prune on purpose (exit code 3); the script itself succeeded.
+exit 0
