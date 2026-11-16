@@ -124,7 +124,7 @@ Why: the command line tool (E3) runs with `java -jar` and only has the mod JAR o
 
 ## ADR-CP-006: Keep the neighbours of played chunks (K8)
 
-Status: Accepted.
+Status: Accepted. The K5 extension it plans is ADR-CP-007.
 
 K1 stays at threshold 0. A new rule, K8, keeps a chunk that K1 does not keep when it lies within `protectNeighborRadiusChunks` chunks (Chebyshev distance, default 1, 0 turns it off) of a chunk that K1 keeps. It has its own id and reason in the reports. The docs say that the value on disk is an underestimate and what a value of 0 does and does not prove (SPEC section 2).
 
@@ -168,4 +168,4 @@ Status: Accepted.
 
 `Engine.run` stays public in the published JAR. The region writer moves from `core/anvil` to `core/engine` and is package-private: the only way to rewrite a region file is `Engine.run`, which takes the session lock, plans, checks free space, backs up (unless the config turns it off), writes the journal and only then rewrites.
 
-Why: the mod's own entry points (the command line now, the startup hook and the singleplayer screen in M3) all go through `Engine.run`, and with backups and the journal it is the safe path. Another mod that calls it gets the same checks. A public region writer would let a caller rewrite region files with no backup and no journal. Java access rules do not stop reflection; they keep a direct call out of reach by accident.
+Why: the mod's own entry points (the command line now, the startup hook and the singleplayer screen in M3) all go through `Engine.run`, and with backups and the journal it is the safe path. Another mod that calls it gets the same plan, free space check, backup and journal. It can still pass `takeSessionLock` false, as the startup hook (E1) will, where the server holds the lock: then it is the caller that must make sure the world is not loaded. A public region writer would let a caller rewrite region files with no backup and no journal. Java access rules do not stop reflection; they keep a direct call out of reach by accident.

@@ -17,8 +17,8 @@ A chunk is kept if any rule matches. Rules are checked in order and the first ma
 |---|---|---|
 | K1 | `InhabitedTime` is above `inhabitedThresholdTicks` | threshold `0` |
 | K2 | The chunk is within `protectRadiusChunks` of a protected point: the world spawn, or a player's last position or respawn position (read from the player data files, in `playerdata/` before data version 4772 and `players/data/` from it, and from the host player in `level.dat` on the versions that keep it there; see ARCHITECTURE) | radius `4` |
-| K3 | The chunk is force-loaded: it is listed in the dimension's forced-chunk storage, `data/chunks.dat` before data version 4772 (with the chunks Forge and NeoForge force for mods) and `data/minecraft/chunk_tickets.dat` from it (every saved ticket). When that file cannot be read, or holds data this version does not know, every chunk of the dimension counts as force-loaded. Details in ARCHITECTURE | on |
-| K4 | The chunk holds a structure start referenced, for that structure, by at least one other kept chunk. A chunk kept this way counts as kept in turn | on |
+| K3 | The chunk is force-loaded: it is listed in the dimension's forced-chunk storage, `data/chunks.dat` before data version 4772 (with the chunks Forge and NeoForge force for mods) and `data/minecraft/chunk_tickets.dat` from it (every saved ticket, and the chunks NeoForge forces for mods). When that file cannot be read, or holds data this version does not know, every chunk of the dimension counts as force-loaded. Details in ARCHITECTURE | on |
+| K4 | The chunk holds a structure start referenced, for that structure, by at least one other kept chunk, or lies within 8 chunks of a chunk whose `region/` entry or file cannot be read (its references are unknown). A chunk kept this way counts as kept in turn | on |
 | K5 | Its `entities/` entry has an entity (passengers included) that a player cares about or may have placed or moved, unless world generation placed it there (definition below) | on |
 | K6 | It lies inside a protected box from the config (`protectedAreas`) | none |
 | K7 | It cannot be read or understood: corrupt data, unknown compression, or a missing external `.mcc` file | always on |
@@ -57,7 +57,7 @@ World generation places some of these by itself. They do not keep their chunk wh
 
 An `end_crystal` that shows its bedrock base (`ShowBottom` true, the default) in the End was placed by the end spikes; a crystal placed from the item does not show it. Anything else, in particular the same entity outside the structure that places it, keeps the chunk: in doubt, the chunk is kept (ADR-CP-003).
 
-While K5 is on, a chunk whose `entities/` entry cannot be read or names another chunk is kept under K7.
+While K5 is on, a chunk whose `entities/` entry cannot be read or names another chunk is kept: under K1 to K6 when one of them matches, otherwise under K7.
 
 Chunks whose generation status is not `full` (leftovers from generation) can be pruned under the same rules.
 
@@ -69,7 +69,7 @@ Only `minecraft:overworld`, `minecraft:the_nether` and `minecraft:the_end` are p
 |---|---|---|---|
 | E1 | Dedicated or integrated server startup | A pending schedule (from `/chunkpruner schedule`), or `autoPrune.enabled` with its interval elapsed | Before any level or chunk is loaded. The server's own session lock is held. |
 | E2 | Singleplayer, Edit World screen | The "Prune unvisited chunks" button | The world is not open. The vanilla backup prompt comes first. |
-| E3 | Command line: `java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path> [--dry-run] [--config <file>]` | Manual | The world must not be in use. The tool refuses to run if another process holds `session.lock`. |
+| E3 | Command line: `java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path> [--dry-run] [--config <file>]` | Manual | The world must not be in use. The tool refuses to run if another process holds `session.lock`, and holds it for the whole run; a run that rewrites files creates a missing `session.lock` the way the game does. |
 
 All three contexts call the same engine with the same config and write the same reports.
 
@@ -82,16 +82,16 @@ All three contexts call the same engine with the same config and write the same 
 2. Scan. Read the region headers and only the fields each chunk needs (§5). Build the protected points (K2), the forced set (K3), the structure reference graph (K4) and the K5 finding of each chunk.
 3. Decide. Resolve the structure graph against the chunks the other rules keep, apply the keep rules and record a reason per chunk. A region is affected when at least one of its chunks will be pruned.
 4. In dry-run mode, write the report and stop here.
-5. Backup, unless `backup` is `false`. Copy each affected region file, with its `entities/` and `poi/` counterparts and the `.mcc` files of the chunks that go, to `chunkpruner/backups/<run-id>/<namespace>/<path>/<storage>/`. Each copy is forced to disk and its size compared with the original. If a copy fails, stop: nothing has changed. Copying the backup back over the world undoes the run.
+5. Backup, unless `backup` is `false`. Copy each affected region file, with those of its `entities/` and `poi/` counterparts that lose entries and the `.mcc` files of the chunks that go, to `chunkpruner/backups/<run-id>/<namespace>/<path>/<storage>/`. Each copy is forced to disk and its size compared with the original. If a copy fails, delete the partial backup and stop: nothing has changed. Copying the backup back over the world undoes the run.
 6. Journal. Write `chunkpruner/journal-plan.json`, with the entries each affected file loses, its size and modification time before, its size after, and the report of the run, then `chunkpruner/journal.json` with the affected regions and their state (`pending`). The plan is written once; the state file is written again after each region.
 7. Rewrite each affected region in the three storages, the `region/` file first.
    - Before a file is rewritten, it is checked against the plan. A file that is neither as planned nor as the plan leaves it changed since: the run stops and keeps its journal and backup.
    - Write a compacted file with only the kept chunks. Their sectors are copied byte for byte, with no recompression, and the header is rebuilt.
    - Delete the file when no chunk is left in it, and the `.mcc` files of the chunks that go.
    - Writes are atomic (`.tmp`, fsync, move). After each region, mark it `done` in the journal.
-8. Finish. Write the report, delete the journal, apply backup retention (keep the `backupRetention` newest run backups, delete the older ones) and clear the schedule.
+8. Finish. Write the report, delete the journal, apply backup retention (keep the backup of this run and the newest others up to `backupRetention` backups, delete the older ones; a prune with nothing to remove applies it too) and clear the schedule.
 
-If a journal exists at startup (E1), or when E2 or E3 opens the world, the previous run was interrupted. Whatever was asked, a dry run included, the engine finishes the `pending` regions with the recorded decisions: a file still as planned is rewritten, a file already as the plan leaves it is kept, and the run stops if a file is neither. It then writes the recorded report with a `resumed` warning, deletes the journal and applies the retention. A new run never starts while a journal exists. A plan without its state file comes from a run stopped before its first rewrite, which changed nothing; it is deleted.
+If a journal exists at startup (E1), or when E2 or E3 opens the world, the previous run was interrupted. Whatever was asked, a dry run included, the engine finishes the `pending` regions with the recorded decisions: a file still as planned is rewritten, a file already as the plan leaves it is kept, and the run stops if a file is neither. It then writes the recorded report with a `resumed` warning (or keeps the report when the interrupted run had already written it), deletes the journal and applies the retention. A new run never starts while a journal exists. When a file changed since the plan (the world was opened or edited in between), every run stops with the same error and says how to leave that state: copy the backup back over the world, if there is one, then delete `chunkpruner/journal.json` and `chunkpruner/journal-plan.json`. A plan without its state file comes from a run stopped before its first rewrite, which changed nothing; it is deleted.
 
 A process killed at any point leaves each storage file either as it was or as the plan makes it, with at most a `.tmp` file next to it. A region whose three files were not all rewritten yet mixes old and new files until the journal finishes it.
 
@@ -140,7 +140,7 @@ A command never prunes a running world directly.
 | `protectedAreas` | `[]` | K6, as `{ dimension, minX, minZ, maxX, maxZ }` in block coordinates. |
 | `dimensions.include` | the three vanilla dimensions | Dimensions to process. |
 | `backup` | `true` | Back up affected files before the rewrite. `false` skips the backup; the journal is still written. |
-| `backupRetention` | `3` | Number of run backups kept, from 0 to 1000; older ones are deleted at the end of each prune run. |
+| `backupRetention` | `3` | Number of run backups kept, from 0 to 1000; older ones are deleted at the end of each prune run. The backup of the run that just finished is always kept, so `0` and `1` both keep only that one. |
 | `autoPrune.enabled` | `false` | Periodic run at startup (E1). |
 | `autoPrune.intervalDays` | `7` | Minimum days between automatic runs. |
 | `autoPrune.mode` | `"dry-run"` | Must be set to `"prune"` explicitly to allow unattended pruning. |
