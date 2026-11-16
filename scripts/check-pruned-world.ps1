@@ -36,8 +36,7 @@ $classpath = (Get-Content -LiteralPath $classpathFile -Raw).Trim()
 
 function Invoke-FixtureTool {
     param([string[]]$Arguments)
-    $output = & $javaExe -cp $classpath 'fr.palawi.chunkpruner.core.fixture.FixturePruneTool' @Arguments 2>&1 | ForEach-Object { "$_" }
-    return @{ Code = $LASTEXITCODE; Output = ($output -join "`n") }
+    return Invoke-NativeCapture -FilePath $javaExe -Arguments (@('-cp', $classpath, 'fr.palawi.chunkpruner.core.fixture.FixturePruneTool') + $Arguments)
 }
 
 if (Test-Path -LiteralPath $serverDir) { Remove-Item -LiteralPath $serverDir -Recurse -Force }
