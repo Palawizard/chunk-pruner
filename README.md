@@ -8,8 +8,6 @@
 
 In development. There is no release yet.
 
----
-
 ## What it does
 
 Every chunk records how long players have spent near it (its inhabited time). Chunks that were only seen from a distance, while flying or during pregeneration, have an inhabited time of zero and usually make up most of a world's size. Chunk Pruner removes them while the world is not loaded. The game generates them again, from the same seed, when someone goes there.
@@ -22,15 +20,11 @@ Areas that are pruned after new worldgen mods are added will generate with those
 - Required on the server only. On a client it only adds the singleplayer screen.
 - Adds no blocks, items or registry entries. No dependencies beyond the loader.
 
----
-
 ## Installation
 
 1. Download the JAR that matches your Minecraft version band and loader from the releases page (see [docs/SUPPORT.md](docs/SUPPORT.md)).
 2. Put it in the server's `mods` folder.
 3. Start the server once to create `config/chunkpruner.json`.
-
----
 
 ## Usage
 
@@ -54,8 +48,6 @@ java -jar chunkpruner-<version>.jar --world <path-to-world> --dry-run
 
 Commands require permission level 4 by default. The exact rules are in [docs/SPEC.md](docs/SPEC.md).
 
----
-
 ## Documentation
 
 - [docs/SPEC.md](docs/SPEC.md): keep rules, run flow and acceptance scenarios
@@ -64,8 +56,6 @@ Commands require permission level 4 by default. The exact rules are in [docs/SPE
 - [docs/TESTING.md](docs/TESTING.md): test strategy
 - [docs/DECISIONS.md](docs/DECISIONS.md): decision records
 - [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/release-checklist.md](docs/release-checklist.md)
-
----
 
 ## License
 
