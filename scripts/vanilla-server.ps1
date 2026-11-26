@@ -188,6 +188,8 @@ function Assert-JoinBotKicked {
     # position report failed on the closed connection first.
     param([System.Diagnostics.Process]$Process, [string]$WorkDir, [string]$Name, [string]$Reason)
     if (-not $Process.WaitForExit(30000)) { throw "The join bot $Name did not exit within 30 s of its kick." }
+    # The overload without a timeout also waits for the redirected output to be written.
+    $Process.WaitForExit()
     $text = Get-JoinBotLog $WorkDir $Name
     if ($text -notmatch "disconnected by the server, joined true, reason: .*$([regex]::Escape($Reason))") {
         throw "The join bot $Name did not report its kick with the reason '$Reason': $text"
