@@ -6,7 +6,7 @@
 
 It is a copy of the client written for Player Data Rescue (`testmod/join-bot/JoinBot.java` on its `dev` branch, commit `1171da1`, ADR-PDR-006 there), checked there on the eight Tier A dedicated servers. This copy is maintained here on its own. It differs from the original in its position reports and in the two fixes listed below. It reports its position after each teleport and then every second (`ServerboundMovePlayerPacket.PosRot`), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket`.
 
-Two fixes made in Player Data Rescue on the same change (its pull request 4, commits `7f51aca` and `caa27a9`) are carried over here:
+Two fixes made in Player Data Rescue on the same change (its pull request 4: commit `7f51aca`, and commits `0a310d7` and `caa27a9`) are carried over here:
 
 - When the server sends `start_configuration` (1.20.2 and later), the client stops its position reports until the next teleport, since play packets are not allowed in the configuration phase. A vanilla server only sends it from `/debugconfig`, which the 26.3 server registers only with the system properties `MC_DEBUG_ENABLED` and `MC_DEBUG_DEV_COMMANDS` set to true (`Commands`, `SharedConstants`, read in the 26.3 server JAR), so the fixture worlds never reach it.
 - A position report that fails to write no longer ends the client with a network error. The server may close the connection right after its disconnect packet; the client then stops reporting and reads on, so it still logs the disconnect and its reason.

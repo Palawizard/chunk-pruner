@@ -17,7 +17,8 @@ param(
 
 # S2 (and S5 with -Interrupt) on a real server: prunes a copy of the world with the test-only
 # fixture tool, opens the copy on the vanilla dedicated server of the same version, teleports the
-# join client into a pruned area, and checks that the server loads the world without region
+# join client into a pruned area, checks that a fill there succeeds (the area is loaded) and that
+# the client logs its kick with the reason, then that the server loads the world without region
 # errors and generates that chunk again.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
