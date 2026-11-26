@@ -28,7 +28,7 @@ A chunk is kept if any rule matches. Rules are checked in order and the first ma
 
 ### K5: entities a player cares about, placed or moved
 
-Defined from the decompiled sources of 1.20.1, 1.21.1 and 26.3 (ADR-CP-009; keys per version in ARCHITECTURE). An entity keeps its chunk when one of these holds:
+Defined from the decompiled sources and the structure templates of 1.20.1, 1.21.1 and 26.3 (ADR-CP-009; keys per version in ARCHITECTURE). An entity keeps its chunk when one of these holds:
 
 1. It carries a mark only a player leaves: a custom name (`CustomName`); an owner on a living entity (`Owner` with `Health`: tamed wolves, cats and parrots, tamed horses and llamas); a fox that trusts someone (`Trusted` not empty); an allay that likes a player (its `liked_player` memory); a leash (`Leash` before 1.21, `leash` from it), except the llama of a wandering trader leashed to its trader (a UUID that is not one of the world's players); released from a bucket (`FromBucket`); an iron golem built by a player (`PlayerCreated`).
 2. It is persistent (`PersistenceRequired` true).
