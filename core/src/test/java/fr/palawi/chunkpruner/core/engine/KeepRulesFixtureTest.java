@@ -154,12 +154,12 @@ class KeepRulesFixtureTest {
     @ParameterizedTest
     @MethodSource("worlds")
     void inTheEndTheCrystalAndFrameChunksStay(String name) throws Exception {
-        Set<Long> withCrystalOrFrame = new HashSet<>();
+        Set<Long> keptByK5 = new HashSet<>();
         Set<Long> withSpikeCrystal = new HashSet<>();
         ReferenceWorld reference = ReferenceWorld.read(FixtureWorlds.committed(name));
         for (Chunk c : ReferenceWorld.chunksIn(reference.end(), "entities", false)) {
             if (ExpectedEntities.keeps(c, reference.players())) {
-                withCrystalOrFrame.add(c.key());
+                keptByK5.add(c.key());
             }
             for (Object e : (List<?>) c.nbt().getOrDefault("Entities", List.of())) {
                 if ("minecraft:end_crystal".equals(((Map<?, ?>) e).get("id")) && c.z() < 20) {
@@ -167,8 +167,10 @@ class KeepRulesFixtureTest {
                 }
             }
         }
-        assertTrue(withCrystalOrFrame.containsAll(
-                Set.of(ReferenceWorld.key(0, 20), ReferenceWorld.key(1, 20), ReferenceWorld.key(2, 20))));
+        assertTrue(
+                keptByK5.containsAll(
+                        Set.of(ReferenceWorld.key(0, 20), ReferenceWorld.key(1, 20), ReferenceWorld.key(2, 20))),
+                "the two summoned crystals and the elytra frame keep their chunks");
         assertEquals(10, withSpikeCrystal.size(), "the ten end spike crystals stand in ten chunks");
 
         Path world = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end"));
@@ -177,7 +179,7 @@ class KeepRulesFixtureTest {
         for (Chunk c : ReferenceWorld.chunksIn(ReferenceWorld.read(world).end(), "region", false)) {
             left.add(c.key());
         }
-        assertEquals(withCrystalOrFrame, left, "the End chunks left after the prune");
+        assertEquals(keptByK5, left, "the End chunks left after the prune");
         assertTrue(left.containsAll(withSpikeCrystal), "the end spike chunks are kept");
 
         Path off = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end-off"));
