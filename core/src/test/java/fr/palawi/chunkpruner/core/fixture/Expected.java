@@ -89,7 +89,7 @@ public final class Expected {
             if (readable && rules.entities() && entityChunk != null) {
                 if (!ExpectedEntities.readable(entityChunk)) {
                     readable = false;
-                } else if (ExpectedEntities.keeps(entityChunk, c, world.players(), "minecraft:overworld")) {
+                } else if (ExpectedEntities.keeps(entityChunk, world.players())) {
                     k5.add(c.key());
                 }
             }

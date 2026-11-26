@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import fr.palawi.chunkpruner.core.config.Config;
 import fr.palawi.chunkpruner.core.fixture.Expected;
+import fr.palawi.chunkpruner.core.fixture.ExpectedEntities;
 import fr.palawi.chunkpruner.core.fixture.FixtureWorlds;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld.Chunk;
@@ -38,10 +39,10 @@ class KeepRulesFixtureTest {
         {-2, "item frame with a diamond", true},
         {-1, "minecart", true},
         {0, "boat", true},
-        {1, "end crystal placed from the item (ShowBottom false)", true},
+        {1, "end crystal without its base", true},
         {2, "dropped diamond", true},
-        {3, "chest minecart with a loot table, outside any mineshaft", true},
-        {4, "end crystal that shows its base, outside the End", true},
+        {3, "chest minecart with a loot table", true},
+        {4, "end crystal that shows its base", true},
         {5, "plain cow", false},
         {6, "nothing", false}
     };
@@ -146,20 +147,40 @@ class KeepRulesFixtureTest {
     }
 
     /**
-     * The End, where nobody went: the end spike crystals the game placed (base shown) do not keep
-     * their chunks, the crystal placed without its base and the frame with an elytra, outside an
-     * end city, do. Every other End chunk goes.
+     * The End, where nobody went: the chunks with an end crystal, the ten the game placed on the
+     * end spikes as much as the two summoned ones, and the chunk with the elytra frame are kept
+     * (K5 keeps what world generation placed too, ADR-CP-009). Every other End chunk goes.
      */
     @ParameterizedTest
     @MethodSource("worlds")
-    void inTheEndOnlyThePlayerSetupsKeepTheirChunks(String name) throws Exception {
+    void inTheEndTheCrystalAndFrameChunksStay(String name) throws Exception {
+        Set<Long> keptByK5 = new HashSet<>();
+        Set<Long> withSpikeCrystal = new HashSet<>();
+        ReferenceWorld reference = ReferenceWorld.read(FixtureWorlds.committed(name));
+        for (Chunk c : ReferenceWorld.chunksIn(reference.end(), "entities", false)) {
+            if (ExpectedEntities.keeps(c, reference.players())) {
+                keptByK5.add(c.key());
+            }
+            for (Object e : (List<?>) c.nbt().getOrDefault("Entities", List.of())) {
+                if ("minecraft:end_crystal".equals(((Map<?, ?>) e).get("id")) && c.z() < 20) {
+                    withSpikeCrystal.add(c.key());
+                }
+            }
+        }
+        assertTrue(
+                keptByK5.containsAll(
+                        Set.of(ReferenceWorld.key(0, 20), ReferenceWorld.key(1, 20), ReferenceWorld.key(2, 20))),
+                "the two summoned crystals and the elytra frame keep their chunks");
+        assertEquals(10, withSpikeCrystal.size(), "the ten end spike crystals stand in ten chunks");
+
         Path world = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end"));
         Engine.run(settings(world, Config.defaults(), RunMode.PRUNE));
         Set<Long> left = new HashSet<>();
         for (Chunk c : ReferenceWorld.chunksIn(ReferenceWorld.read(world).end(), "region", false)) {
             left.add(c.key());
         }
-        assertEquals(Set.of(ReferenceWorld.key(1, 20), ReferenceWorld.key(2, 20)), left);
+        assertEquals(keptByK5, left, "the End chunks left after the prune");
+        assertTrue(left.containsAll(withSpikeCrystal), "the end spike chunks are kept");
 
         Path off = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end-off"));
         Engine.run(settings(off, Config.fromJson("{\"protectPlayerEntities\": false}"), RunMode.PRUNE));
@@ -169,10 +190,10 @@ class KeepRulesFixtureTest {
 
     /**
      * The plains village of the committed 1.20.1 world placed two cows with PersistenceRequired 1
-     * in a chunk at InhabitedTime 0: world generation, so they do not keep it (ADR-CP-007).
+     * in a chunk at InhabitedTime 0. K5 keeps that chunk, whoever placed the cows (ADR-CP-009).
      */
     @Test
-    void villageAnimalsDoNotKeepTheirChunk() throws Exception {
+    void villageAnimalsKeepTheirChunk() throws Exception {
         ReferenceWorld reference = ReferenceWorld.read(FixtureWorlds.committed("1.20.1"));
         Map<Long, Chunk> region = byKey(reference.chunks("region", false));
         Long pen = null;
@@ -187,11 +208,17 @@ class KeepRulesFixtureTest {
         }
         assertTrue(pen != null, "the fixture has the village cows");
         Expected expected = Expected.compute(reference, Expected.Rules.defaults(), true);
-        assertEquals(null, expected.ruleByChunk.get(pen), "no rule keeps the pen");
+        assertEquals("K5", expected.ruleByChunk.get(pen), "K5 keeps the pen");
         Path world = FixtureWorlds.copy(FixtureWorlds.committed("1.20.1"), temp.resolve("village"));
         Engine.run(settings(world, Config.defaults(), RunMode.PRUNE));
         final long key = pen;
-        assertTrue(ReferenceWorld.read(world).chunks("region", false).stream().noneMatch(c -> c.key() == key));
+        assertTrue(ReferenceWorld.read(world).chunks("region", false).stream().anyMatch(c -> c.key() == key));
+
+        Path off = FixtureWorlds.copy(FixtureWorlds.committed("1.20.1"), temp.resolve("village-off"));
+        Engine.run(settings(off, Config.fromJson("{\"protectPlayerEntities\": false}"), RunMode.PRUNE));
+        assertTrue(
+                ReferenceWorld.read(off).chunks("region", false).stream().noneMatch(c -> c.key() == key),
+                "without K5 no other rule keeps the pen");
     }
 
     /** S8: the datapack dimension is left alone unless the config lists it. */

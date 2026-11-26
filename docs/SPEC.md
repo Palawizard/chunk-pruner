@@ -19,7 +19,7 @@ A chunk is kept if any rule matches. Rules are checked in order and the first ma
 | K2 | The chunk is within `protectRadiusChunks` of a protected point: the world spawn, or a player's last position or respawn position (read from the player data files, in `playerdata/` before data version 4772 and `players/data/` from it, and from the host player in `level.dat` on the versions that keep it there; see ARCHITECTURE) | radius `4` |
 | K3 | The chunk is force-loaded: it is listed in the dimension's forced-chunk storage, `data/chunks.dat` before data version 4772 (with the chunks Forge and NeoForge force for mods) and `data/minecraft/chunk_tickets.dat` from it (every saved ticket, and the chunks NeoForge forces for mods). When that file cannot be read, or holds data this version does not know, every chunk of the dimension counts as force-loaded. Details in ARCHITECTURE | on |
 | K4 | The chunk holds a structure start referenced, for that structure, by at least one other kept chunk, or lies within 8 chunks of a chunk whose `region/` entry or file cannot be read (its references are unknown). A chunk kept this way counts as kept in turn | on |
-| K5 | Its `entities/` entry has an entity (passengers included) that a player cares about or may have placed or moved, unless world generation placed it there (definition below) | on |
+| K5 | Its `entities/` entry has an entity (passengers included) that a player cares about or may have placed or moved, including the same entities when world generation placed them (definition below) | on |
 | K6 | It lies inside a protected box from the config (`protectedAreas`) | none |
 | K7 | It cannot be read or understood: corrupt data, unknown compression, or a missing external `.mcc` file | always on |
 | K8 | It lies within `protectNeighborRadiusChunks` (Chebyshev distance, in chunks) of a chunk kept by K1 | radius `1`, `0` turns it off |
@@ -28,34 +28,13 @@ A chunk is kept if any rule matches. Rules are checked in order and the first ma
 
 ### K5: entities a player cares about, placed or moved
 
-Defined from the decompiled sources and the structure templates of 1.20.1, 1.21.1 and 26.3 (ADR-CP-007; keys per version in ARCHITECTURE). An entity keeps its chunk when one of these holds:
+Defined from the decompiled sources and the structure templates of 1.20.1, 1.21.1 and 26.3 (ADR-CP-009; keys per version in ARCHITECTURE). An entity keeps its chunk when one of these holds:
 
-1. It carries a mark only a player leaves, whatever placed it: a custom name (`CustomName`); an owner on a living entity (`Owner` with `Health`: tamed wolves, cats and parrots, tamed horses and llamas); a fox that trusts someone (`Trusted` not empty); an allay that likes a player (its `liked_player` memory); a leash (`Leash` before 1.21, `leash` from it), except the llama of a wandering trader leashed to its trader (a UUID that is not one of the world's players); released from a bucket (`FromBucket`); an iron golem built by a player (`PlayerCreated`).
-2. It is persistent (`PersistenceRequired` true), unless world generation placed it (below).
-3. It is of a type a player places with an item, builds, or makes with commands: `armor_stand`, `item_frame`, `glow_item_frame`, `painting`, `leash_knot`, `end_crystal`, `mannequin`, `cushion`, `item` (an item on the ground), every minecart, boat and raft, `snow_golem`, `copper_golem`, `wither`, the display entities, `interaction` and `marker`, unless world generation placed it (below).
+1. It carries a mark only a player leaves: a custom name (`CustomName`); an owner on a living entity (`Owner` with `Health`: tamed wolves, cats and parrots, tamed horses and llamas); a fox that trusts someone (`Trusted` not empty); an allay that likes a player (its `liked_player` memory); a leash (`Leash` before 1.21, `leash` from it), except the llama of a wandering trader leashed to its trader (a UUID that is not one of the world's players); released from a bucket (`FromBucket`); an iron golem built by a player (`PlayerCreated`).
+2. It is persistent (`PersistenceRequired` true).
+3. It is of a type a player places with an item, builds, or makes with commands: `armor_stand`, `item_frame`, `glow_item_frame`, `painting`, `leash_knot`, `end_crystal`, `mannequin`, `cushion`, `item` (an item on the ground), every minecart, boat and raft, `snow_golem`, `copper_golem`, `wither`, the display entities, `interaction` and `marker`.
 
-World generation places some of these by itself. They do not keep their chunk when they carry no mark of point 1 and stand in a chunk that the structure placing them starts in or references (from the chunk's `region/` entry):
-
-| Entity | Placed by |
-|---|---|
-| `villager`, `zombie_villager` | villages, igloos |
-| `cat` | villages, swamp huts |
-| `cow`, `pig`, `sheep`, `horse` | villages |
-| `camel` | desert villages |
-| `armor_stand` | taiga villages |
-| `iron_golem` | villages, pillager outposts |
-| `allay` | pillager outposts, woodland mansions |
-| `piglin`, `piglin_brute`, `hoglin` | bastion remnants |
-| `witch` | swamp huts |
-| `elder_guardian` | ocean monuments |
-| `drowned`, `zombie_nautilus` | ocean ruins |
-| `evoker`, `vindicator` | woodland mansions |
-| `shulker` | end cities |
-| `item_frame` holding an elytra, in the End | end cities |
-| `chest_minecart` that still has its `LootTable` (never opened) | mineshafts |
-| `cushion` | abandoned camps (26.3) |
-
-An `end_crystal` that shows its bedrock base (`ShowBottom` true, the default) in the End was placed by the end spikes; a crystal placed from the item does not show it. Anything else, in particular the same entity outside the structure that places it, keeps the chunk: in doubt, the chunk is kept (ADR-CP-003).
+Points 2 and 3 hold whoever placed the entity. World generation places some of them by itself: the entities that structure templates mark persistent (the animals of villages among them), the armor stands of taiga villages, the persistent mobs that the code of swamp huts, ocean monuments, ocean ruins and woodland mansions adds, the item frame with an elytra of end cities, the chest minecarts of mineshafts, the crystals of the end spikes, and on 26.3 the cushions of abandoned camps. Their chunks are kept too: the engine cannot tell for sure that a player never touched them, so in doubt the chunk is kept (ADR-CP-003).
 
 While K5 is on, a chunk whose `entities/` entry cannot be read or names another chunk is kept: under K1 to K6 when one of them matches, otherwise under K7.
 
