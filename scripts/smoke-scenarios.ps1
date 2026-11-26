@@ -60,8 +60,13 @@ function Invoke-SmokeJoin {
         Wait-ServerLog -ServerDir $serverDir -Process $script:serverProcess -Pattern 'S9Bot\[[^\]]*\] logged in' -Seconds 120 -Offset $offset
         Start-Sleep -Seconds 3
         Invoke-SmokeRcon -Command 'tp S9Bot 800 120 800' -Pattern 'Teleported' | Out-Null
-        Start-Sleep -Seconds 10
-        Invoke-SmokeRcon -Command 'fill 798 119 798 802 119 802 minecraft:glass' -Pattern 'Successfully filled' | Out-Null
+        # The destination is new terrain: give the server up to 40 s to generate and load it.
+        $deadline = (Get-Date).AddSeconds(40)
+        do {
+            Start-Sleep -Seconds 5
+            $answer = Invoke-SmokeRcon -Command 'fill 798 119 798 802 119 802 minecraft:glass'
+        } while ($answer -notmatch 'Successfully filled' -and (Get-Date) -lt $deadline)
+        if ($answer -notmatch 'Successfully filled') { throw "The fill at the teleport destination answered '$answer' after 40 s." }
         Invoke-SmokeRcon -Command 'kick S9Bot Smoke done' -Pattern 'Kicked' | Out-Null
         Assert-JoinBotKicked -Process $bot -WorkDir $serverDir -Name 'S9Bot' -Reason 'Smoke done'
         Write-Host '  S9: a client without the mod joined, moved and left normally'

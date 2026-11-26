@@ -94,7 +94,7 @@ function Get-InstallerLaunchArgs {
 
 function Write-ServerConfig {
     Set-Content -LiteralPath (Join-Path $serverDir 'eula.txt') -Value 'eula=true' -Encoding ascii
-    Set-Content -LiteralPath (Join-Path $serverDir 'server.properties') -Encoding ascii -Value @(
+    Set-Content -LiteralPath (Join-Path $serverDir 'server.properties') -Encoding ascii -Value (@(
         'online-mode=false'
         "server-port=$ServerPort"
         'enable-rcon=true'
@@ -106,7 +106,9 @@ function Write-ServerConfig {
         'level-name=smokeworld'
         # 26.3 turns the whitelist on by default; the join client is not on it.
         'white-list=false'
-    ) + (Get-SmokeServerProperties)
+        # The join client stands in the air after a teleport; without this the server kicks it.
+        'allow-flight=true'
+    ) + @(Get-SmokeServerProperties))
 }
 
 function Reset-ServerState {
@@ -115,7 +117,7 @@ function Reset-ServerState {
     if (Test-Path -LiteralPath $mods) { Remove-Item -LiteralPath $mods -Recurse -Force }
     New-Item -ItemType Directory -Path $mods -Force | Out-Null
     Copy-Item -LiteralPath $ModJar -Destination $mods
-    foreach ($stale in 'smokeworld', 'logs', 'crash-reports') {
+    foreach ($stale in 'smokeworld', 'logs', 'crash-reports', 'config/chunkpruner.json') {
         $path = Join-Path $serverDir $stale
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
     }
