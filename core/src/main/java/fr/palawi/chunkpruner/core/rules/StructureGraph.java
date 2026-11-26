@@ -49,25 +49,6 @@ public final class StructureGraph {
         }
     }
 
-    /** The ids of the structures that start in the chunk or reference it. */
-    public Set<String> structuresAt(int chunkX, int chunkZ) {
-        long key = pack(chunkX, chunkZ);
-        Set<String> result = new HashSet<>();
-        int[] startIds = starts.get(key);
-        if (startIds != null) {
-            for (int id : startIds) {
-                result.add(names.get(id));
-            }
-        }
-        int[] refIds = referenceIds.get(key);
-        if (refIds != null) {
-            for (int id : refIds) {
-                result.add(names.get(id));
-            }
-        }
-        return result;
-    }
-
     /** How far a reference reaches: the game drops one more than 8 chunks away. */
     public static final int REFERENCE_RANGE = 8;
 
