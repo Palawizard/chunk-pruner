@@ -10,7 +10,8 @@ import java.util.Objects;
  * Everything a run needs. {@code takeSessionLock} is true when the engine itself must make sure
  * the world is not open (E2, E3); on a server (E1) the server already holds the lock.
  * {@code loader} and {@code modVersion} only go into the report and may be null; {@code listener}
- * hears the steps of a prune run.
+ * hears the steps of a prune run. {@code scanThreads} is the number of threads that read region
+ * files during the scan; writes always happen on the calling thread, one file after the other.
  */
 public record RunSettings(
         Path world,
@@ -23,7 +24,8 @@ public record RunSettings(
         Compression compression,
         String loader,
         String modVersion,
-        RunListener listener) {
+        RunListener listener,
+        int scanThreads) {
     public RunSettings {
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(config, "config");
@@ -33,6 +35,9 @@ public record RunSettings(
         Objects.requireNonNull(clock, "clock");
         Objects.requireNonNull(compression, "compression");
         Objects.requireNonNull(listener, "listener");
+        if (scanThreads < 1) {
+            throw new IllegalArgumentException("scanThreads must be at least 1");
+        }
     }
 
     public static RunSettings of(Path world, Config config, RunMode mode, RunContext context) {
@@ -47,17 +52,40 @@ public record RunSettings(
                 Compression.detect(),
                 null,
                 null,
-                RunListener.NONE);
+                RunListener.NONE,
+                ParallelReads.defaultThreads());
     }
 
     public RunSettings withFreeSpace(FreeSpace value) {
         return new RunSettings(
-                world, config, mode, context, takeSessionLock, value, clock, compression, loader, modVersion, listener);
+                world,
+                config,
+                mode,
+                context,
+                takeSessionLock,
+                value,
+                clock,
+                compression,
+                loader,
+                modVersion,
+                listener,
+                scanThreads);
     }
 
     public RunSettings withCompression(Compression value) {
         return new RunSettings(
-                world, config, mode, context, takeSessionLock, freeSpace, clock, value, loader, modVersion, listener);
+                world,
+                config,
+                mode,
+                context,
+                takeSessionLock,
+                freeSpace,
+                clock,
+                value,
+                loader,
+                modVersion,
+                listener,
+                scanThreads);
     }
 
     public RunSettings withClock(Clock value) {
@@ -72,7 +100,8 @@ public record RunSettings(
                 compression,
                 loader,
                 modVersion,
-                listener);
+                listener,
+                scanThreads);
     }
 
     public RunSettings withListener(RunListener value) {
@@ -87,7 +116,8 @@ public record RunSettings(
                 compression,
                 loader,
                 modVersion,
-                value);
+                value,
+                scanThreads);
     }
 
     public RunSettings withVersions(String loaderName, String version) {
@@ -102,6 +132,23 @@ public record RunSettings(
                 compression,
                 loaderName,
                 version,
-                listener);
+                listener,
+                scanThreads);
+    }
+
+    public RunSettings withScanThreads(int value) {
+        return new RunSettings(
+                world,
+                config,
+                mode,
+                context,
+                takeSessionLock,
+                freeSpace,
+                clock,
+                compression,
+                loader,
+                modVersion,
+                listener,
+                value);
     }
 }

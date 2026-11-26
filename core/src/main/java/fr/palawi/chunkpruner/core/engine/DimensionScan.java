@@ -33,10 +33,12 @@ import java.util.Set;
 
 /**
  * Scans and decides one dimension in two passes. The first reads every chunk of {@code region/}
- * (K1, K7 and the structure graph) and, when K5 is on, of {@code entities/}. Between the passes
- * the structure graph is resolved against the chunks the other rules keep (K4, and K8 needs every
- * K1 chunk). The second pass applies the rules and plans which entries leave each storage.
- * Nothing is written here.
+ * (K1, K7 and the structure graph) and, when K5 is on, of {@code entities/}: each region file is
+ * read on its own, possibly on another thread ({@link ParallelReads}), and what it found is added
+ * to the dimension's state on the calling thread, in file order. Between the passes the structure
+ * graph is resolved against the chunks the other rules keep (K4, and K8 needs every K1 chunk). The
+ * second pass applies the rules and plans which entries leave each storage. Nothing is written
+ * here.
  */
 final class DimensionScan {
     private final DimensionId dimension;
@@ -47,6 +49,7 @@ final class DimensionScan {
     private final DimensionReport report;
     private final ForcedChunks forced;
     private final PlayerEntities playerEntities;
+    private final ParallelReads reads;
     private final PlayedChunks played = new PlayedChunks();
     private final StructureGraph structures = new StructureGraph();
     private final Map<Long, RegionScan> regions = new HashMap<>();
@@ -73,7 +76,8 @@ final class DimensionScan {
             ForcedChunks forced,
             PlayerEntities playerEntities,
             ChunkReader reader,
-            Warnings warnings) {
+            Warnings warnings,
+            ParallelReads reads) {
         this.dimension = dimension;
         this.folder = folder;
         this.rules = rules;
@@ -81,6 +85,7 @@ final class DimensionScan {
         this.playerEntities = playerEntities;
         this.reader = reader;
         this.warnings = warnings;
+        this.reads = reads;
         String relative = world.relativize(folder).toString().replace('\\', '/');
         this.report = new DimensionReport(dimension.toString(), relative.isEmpty() ? "." : relative);
     }
@@ -124,9 +129,7 @@ final class DimensionScan {
                     null,
                     forced.unknownReason() + "; every chunk of the dimension is kept as force-loaded (K3)."));
         }
-        for (Path file : regionFiles) {
-            scan(file);
-        }
+        reads.forEachInOrder(regionFiles, this::read, this::add);
         if (rules.checksStructures()) {
             structures.resolve(this::keptWithoutStructures, this::referencesUnknown);
         }
@@ -141,20 +144,38 @@ final class DimensionScan {
                 (storage, t) -> report.addStorage(storage, new StorageReport(t[0], t[1], t[1] - t[2], t[3], t[4])));
     }
 
-    private void scan(Path file) {
+    /** The structure data of one readable chunk. */
+    private record ChunkStructures(int x, int z, Set<String> starts, Map<String, long[]> references) {}
+
+    /**
+     * What reading one region file found. {@code unreadable} is set when the file could not be
+     * read to its end; {@code scan} then holds what was read before the failure (null when the
+     * header could not be read), whose played chunks and structures still count.
+     */
+    private record RegionRead(
+            String name,
+            int regionX,
+            int regionZ,
+            RegionScan scan,
+            String unreadable,
+            List<ChunkStructures> structures,
+            List<Warning> warnings) {}
+
+    /** Reads one region file and its {@code entities/} counterpart. Touches no shared state. */
+    private RegionRead read(Path file) {
         String name = file.getFileName().toString();
+        List<Warning> found = new ArrayList<>();
         RegionFile region;
         try {
             region = RegionFile.read(file);
         } catch (IOException e) {
-            unreadableRegion(name, "cannot read its header: " + e.getMessage());
-            return;
+            return unreadableRegion(name, "cannot read its header: " + e.getMessage(), found);
         }
         if (region.truncatedHeader()) {
-            unreadableRegion(name, "the file is shorter than its 8 KiB header; it is left untouched.");
-            return;
+            return unreadableRegion(name, "the file is shorter than its 8 KiB header; it is left untouched.", found);
         }
         RegionScan scan = new RegionScan();
+        List<ChunkStructures> chunkStructures = new ArrayList<>();
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
             for (ChunkEntry entry : region.entries()) {
                 ChunkFields fields = reader.read(channel, region, entry);
@@ -164,7 +185,7 @@ final class DimensionScan {
                 scan.present.set(index);
                 if (fields.external()) {
                     scan.external.set(index);
-                    warnings.add(new Warning(
+                    found.add(new Warning(
                             Warning.EXTERNAL_CHUNK,
                             dimension.toString(),
                             name,
@@ -175,7 +196,7 @@ final class DimensionScan {
                 if (!fields.readable()) {
                     scan.unreadable.set(index);
                     scan.regionUnreadable.set(index);
-                    warnings.add(new Warning(
+                    found.add(new Warning(
                             Warning.UNREADABLE_CHUNK,
                             dimension.toString(),
                             name,
@@ -184,21 +205,55 @@ final class DimensionScan {
                             "kept (K7): " + fields.problem() + "."));
                     continue;
                 }
-                structures.add(x, z, fields.starts(), fields.references());
+                chunkStructures.add(new ChunkStructures(x, z, fields.starts(), fields.references()));
                 if (rules.played(fields.inhabitedTime())) {
                     scan.played.set(index);
-                    played.add(x, z);
                 }
             }
         } catch (IOException e) {
-            unreadableRegion(name, "cannot read the file: " + e.getMessage());
-            return;
+            return new RegionRead(
+                    name,
+                    region.regionX(),
+                    region.regionZ(),
+                    scan,
+                    "cannot read the file: " + e.getMessage(),
+                    chunkStructures,
+                    found);
         }
         scan.rewritable = region.rewritable() && counterpartsRewritable(name);
         if (rules.checksPlayerEntities()) {
-            scanEntities(name, scan);
+            scanEntities(name, scan, found);
         }
-        regions.put(regionKey(region.regionX(), region.regionZ()), scan);
+        return new RegionRead(name, region.regionX(), region.regionZ(), scan, null, chunkStructures, found);
+    }
+
+    /** Adds what one region file held to the dimension, in the order the files are listed. */
+    private void add(RegionRead read) {
+        read.warnings().forEach(warnings::add);
+        for (ChunkStructures chunk : read.structures()) {
+            structures.add(chunk.x(), chunk.z(), chunk.starts(), chunk.references());
+        }
+        if (read.scan() != null) {
+            BitSet playedBits = read.scan().played;
+            for (int index = playedBits.nextSetBit(0); index >= 0; index = playedBits.nextSetBit(index + 1)) {
+                played.add(read.regionX() * 32 + (index & 31), read.regionZ() * 32 + (index >> 5));
+            }
+        }
+        if (read.unreadable() != null) {
+            unreadableFiles.add(read.name());
+            int[] coordinates = RegionFile.coordinates(read.name());
+            if (coordinates != null) {
+                unreadableRegions.add(regionKey(coordinates[0], coordinates[1]));
+            }
+            warnings.add(new Warning(
+                    Warning.UNREADABLE_REGION, dimension.toString(), read.name(), null, null, read.unreadable()));
+            return;
+        }
+        regions.put(regionKey(read.regionX(), read.regionZ()), read.scan());
+    }
+
+    private static RegionRead unreadableRegion(String name, String message, List<Warning> found) {
+        return new RegionRead(name, 0, 0, null, message, List.of(), found);
     }
 
     private boolean counterpartsRewritable(String name) {
@@ -218,7 +273,7 @@ final class DimensionScan {
     }
 
     /** K5 on the {@code entities/} counterpart; an entry that cannot be read is kept (K7). */
-    private void scanEntities(String name, RegionScan scan) {
+    private void scanEntities(String name, RegionScan scan, List<Warning> found) {
         Path file = folder.resolve(Storage.ENTITIES.folder()).resolve(name);
         if (!Files.isRegularFile(file)) {
             return;
@@ -238,7 +293,7 @@ final class DimensionScan {
                 EntityFields fields = reader.readEntities(channel, region, entry);
                 if (fields.entities() == null) {
                     scan.unreadable.set(index);
-                    warnings.add(new Warning(
+                    found.add(new Warning(
                             Warning.UNREADABLE_CHUNK,
                             dimension.toString(),
                             "entities/" + name,
@@ -290,15 +345,6 @@ final class DimensionScan {
 
     private static long regionKey(int regionX, int regionZ) {
         return (long) regionX << 32 | (regionZ & 0xFFFFFFFFL);
-    }
-
-    private void unreadableRegion(String name, String message) {
-        unreadableFiles.add(name);
-        int[] coordinates = RegionFile.coordinates(name);
-        if (coordinates != null) {
-            unreadableRegions.add(regionKey(coordinates[0], coordinates[1]));
-        }
-        warnings.add(new Warning(Warning.UNREADABLE_REGION, dimension.toString(), name, null, null, message));
     }
 
     /** totals per storage: files, bytes before, bytes removed, files changed, files deleted. */

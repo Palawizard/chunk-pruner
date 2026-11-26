@@ -68,18 +68,21 @@ public final class Engine {
             ChunkReader reader = new ChunkReader(settings.compression());
             List<DimensionReport> dimensions = new ArrayList<>();
             List<Journal.RegionPlan> regions = new ArrayList<>();
-            for (DimensionId id : settings.config().dimensions()) {
-                Path folder = data.layout().dimensionFolder(world, id);
-                KeepRules rules = new KeepRules(settings.config(), id, data.protectedPoints());
-                ForcedChunks forced =
-                        rules.checksForcedChunks() ? ForcedChunks.read(folder, data.layout()) : ForcedChunks.none();
-                PlayerEntities entities = new PlayerEntities(data.players());
-                DimensionScan scan = new DimensionScan(id, world, folder, rules, forced, entities, reader, warnings);
-                scan.run();
-                dimensions.add(scan.report());
-                String relative = world.relativize(folder).toString().replace('\\', '/');
-                for (RegionPlan plan : scan.plans()) {
-                    regions.add(plan(id, relative.isEmpty() ? "." : relative, folder, plan));
+            try (ParallelReads reads = new ParallelReads(settings.scanThreads())) {
+                for (DimensionId id : settings.config().dimensions()) {
+                    Path folder = data.layout().dimensionFolder(world, id);
+                    KeepRules rules = new KeepRules(settings.config(), id, data.protectedPoints());
+                    ForcedChunks forced =
+                            rules.checksForcedChunks() ? ForcedChunks.read(folder, data.layout()) : ForcedChunks.none();
+                    PlayerEntities entities = new PlayerEntities(data.players());
+                    DimensionScan scan =
+                            new DimensionScan(id, world, folder, rules, forced, entities, reader, warnings, reads);
+                    scan.run();
+                    dimensions.add(scan.report());
+                    String relative = world.relativize(folder).toString().replace('\\', '/');
+                    for (RegionPlan plan : scan.plans()) {
+                        regions.add(plan(id, relative.isEmpty() ? "." : relative, folder, plan));
+                    }
                 }
             }
             checkSpace(settings, world, regions, warnings);
