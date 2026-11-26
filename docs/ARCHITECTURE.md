@@ -160,9 +160,9 @@ The server part holds the startup hook and the commands, and the client part hol
 
 | World | Prunable by K1 and K8 | Kept by K4 | Kept by K5 |
 |---|---|---|---|
-| normal terrain 1.20.1 | 3,050 | 3 (0.10 %) | 7 (0.23 %): 6 mineshaft chest minecarts, 1 item on the ground |
-| normal terrain 1.21.1 | 2,828 | 3 (0.11 %) | 3 (0.11 %): 3 mineshaft chest minecarts |
+| normal terrain 1.20.1 | 3,050 | 3 (0.10 %) | 7 (0.23 %): 6 chest minecarts, 1 item on the ground |
+| normal terrain 1.21.1 | 2,828 | 3 (0.11 %) | 3 (0.11 %): 3 chest minecarts |
 | normal terrain 26.3 | 2,779 | 4 (0.14 %) | 0 |
 
-  The script and seed are those of M2, but world generation is not deterministic across runs, so these worlds differ slightly from the M2 ones (for example 3,090 prunable chunks on 1.20.1 in M2). With the world generation exception of ADR-CP-007, K5 kept 0 to 0.06 percent of those chunks in M2. Nothing in the prunable chunks of these worlds is a persistent entity of a structure, so the table does not show what villages, monuments, mansions, bastions or end cities cost: their chunks with persistent entities are always kept now, and in the End the ten end spike chunks too. On the committed 1.20.1 superflat world, K5 keeps one chunk of village cows.
+  The script and seed are those of M2, but world generation is not deterministic across runs, so these worlds differ slightly from the M2 ones (for example 3,090 prunable chunks on 1.20.1 in M2). With the world generation exception of ADR-CP-007, K5 kept 0 to 0.06 percent of those chunks in M2. Nothing in the prunable chunks of these worlds is a persistent entity of a structure, so the table does not show what structures with persistent entities cost: their chunks with such entities are always kept now, and in the End the ten end spike chunks and the end city chunks with the elytra item frame too. K4 is measured with K5 off, so the start chunks that K4 keeps because K5 keeps a chunk of the same structure are not counted. On the committed 1.20.1 superflat world, K5 keeps one chunk of village cows.
   The test fails when K5 keeps more than 10 percent of those chunks on a world that was not made for K5.
