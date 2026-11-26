@@ -44,8 +44,11 @@ class ServerCommandsTest {
         Map<String, String> before = ReferenceWorld.checksums(world);
         Reply reply = ServerCommands.schedule(world, RunMode.PRUNE, DRY_RUN_AT);
         assertFalse(reply.success());
-        assertTrue(reply.lines().get(0).contains("needs a dry run"), reply.lines().toString());
-        assertTrue(reply.lines().get(1).contains("/chunkpruner schedule dry-run"), reply.lines().toString());
+        assertTrue(
+                reply.lines().get(0).contains("needs a dry run"), reply.lines().toString());
+        assertTrue(
+                reply.lines().get(1).contains("/chunkpruner schedule dry-run"),
+                reply.lines().toString());
         assertEquals(before, ReferenceWorld.checksums(world), "a refused schedule writes nothing");
     }
 
@@ -68,7 +71,9 @@ class ServerCommandsTest {
         Instant inTime = DRY_RUN_AT.plus(Duration.ofDays(6));
         Reply reply = ServerCommands.schedule(world, RunMode.PRUNE, inTime);
         assertTrue(reply.success(), reply.lines().toString());
-        assertTrue(reply.lines().get(1).startsWith("Latest dry run (20261120-080000-dry-run"), reply.lines().toString());
+        assertTrue(
+                reply.lines().get(1).startsWith("Latest dry run (20261120-080000-dry-run"),
+                reply.lines().toString());
         assertEquals(new Schedule(RunMode.PRUNE, inTime), Schedule.read(world).orElseThrow());
     }
 
@@ -77,38 +82,51 @@ class ServerCommandsTest {
         ServerCommands.schedule(world, RunMode.DRY_RUN, DRY_RUN_AT);
         dryRunAt(DRY_RUN_AT);
         Reply prune = ServerCommands.schedule(world, RunMode.PRUNE, DRY_RUN_AT.plusSeconds(60));
-        assertTrue(prune.lines().get(0).endsWith("It replaces the pending dry-run."), prune.lines().toString());
+        assertTrue(
+                prune.lines().get(0).endsWith("It replaces the pending dry-run."),
+                prune.lines().toString());
         assertEquals(
                 "The pending prune is cancelled.",
                 ServerCommands.cancel(world).lines().get(0));
         assertFalse(Files.exists(Schedule.file(world)));
-        assertEquals("Nothing is scheduled.", ServerCommands.cancel(world).lines().get(0));
+        assertEquals(
+                "Nothing is scheduled.", ServerCommands.cancel(world).lines().get(0));
     }
 
     @Test
     void statusAndReportDescribeTheWorld() throws Exception {
         Reply empty = ServerCommands.status(world, Config.defaults(), DRY_RUN_AT);
-        assertEquals(
-                java.util.List.of("Scheduled: nothing.", "Last run: none.", "Auto-prune: off."), empty.lines());
+        assertEquals(java.util.List.of("Scheduled: nothing.", "Last run: none.", "Auto-prune: off."), empty.lines());
         assertFalse(ServerCommands.report(world, null).success());
 
         dryRunAt(DRY_RUN_AT);
         ServerCommands.schedule(world, RunMode.DRY_RUN, DRY_RUN_AT.plusSeconds(5));
         Config auto = Config.fromJson("{\"autoPrune\": {\"enabled\": true, \"intervalDays\": 3}}");
         Reply status = ServerCommands.status(world, auto, DRY_RUN_AT.plusSeconds(10));
-        assertEquals("Scheduled: a dry-run at the next server startup (asked 2026-11-20T08:00:05Z).", status.lines().get(0));
-        assertTrue(status.lines().get(1).startsWith("Last run: 20261120-080000-dry-run, dry-run at command line. Would remove "),
+        assertEquals(
+                "Scheduled: a dry-run at the next server startup (asked 2026-11-20T08:00:05Z).",
+                status.lines().get(0));
+        assertTrue(
+                status.lines()
+                        .get(1)
+                        .startsWith("Last run: 20261120-080000-dry-run, dry-run at command line. Would remove "),
                 status.lines().get(1));
-        assertEquals("Auto-prune: dry-run every 3 days, next at the next startup.", status.lines().get(2));
+        assertEquals(
+                "Auto-prune: dry-run every 3 days, next at the next startup.",
+                status.lines().get(2));
 
         Reply report = ServerCommands.report(world, null);
         assertTrue(report.success());
-        assertTrue(report.lines().get(1).startsWith("Would remove "), report.lines().toString());
+        assertTrue(
+                report.lines().get(1).startsWith("Would remove "),
+                report.lines().toString());
         assertEquals(
-                "Full report: chunkpruner/reports/20261120-080000-dry-run.txt", report.lines().get(2));
+                "Full report: chunkpruner/reports/20261120-080000-dry-run.txt",
+                report.lines().get(2));
         assertEquals(report, ServerCommands.report(world, "20261120-080000-dry-run"));
         assertEquals(
-                "No report with the id nope.", ServerCommands.report(world, "nope").lines().get(0));
+                "No report with the id nope.",
+                ServerCommands.report(world, "nope").lines().get(0));
     }
 
     private void dryRunAt(Instant at) throws Exception {
