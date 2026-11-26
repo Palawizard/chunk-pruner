@@ -169,7 +169,7 @@ class KeepRulesFixtureTest {
         }
         assertTrue(withCrystalOrFrame.containsAll(
                 Set.of(ReferenceWorld.key(0, 20), ReferenceWorld.key(1, 20), ReferenceWorld.key(2, 20))));
-        assertTrue(!withSpikeCrystal.isEmpty(), "the end spike crystals are in the fixture");
+        assertEquals(10, withSpikeCrystal.size(), "the ten end spike crystals stand in ten chunks");
 
         Path world = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end"));
         Engine.run(settings(world, Config.defaults(), RunMode.PRUNE));
@@ -178,6 +178,7 @@ class KeepRulesFixtureTest {
             left.add(c.key());
         }
         assertEquals(withCrystalOrFrame, left, "the End chunks left after the prune");
+        assertTrue(left.containsAll(withSpikeCrystal), "the end spike chunks are kept");
 
         Path off = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end-off"));
         Engine.run(settings(off, Config.fromJson("{\"protectPlayerEntities\": false}"), RunMode.PRUNE));
