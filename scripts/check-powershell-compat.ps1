@@ -3,8 +3,8 @@ param(
     # Folder whose .ps1 files are checked (default: this script's folder).
     [string]$Path
 )
-# Windows PowerShell 5.1 leaves $PSScriptRoot empty in the parameter defaults of a script run
-# with -File, so the default is set here.
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty in the parameter defaults of an advanced
+# script ([CmdletBinding()]) run with -File, so the default is set here.
 if (-not $Path) { $Path = $PSScriptRoot }
 
 # The scripts must run on Windows PowerShell 5.1. This refuses the PowerShell 7 operators
