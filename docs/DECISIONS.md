@@ -124,7 +124,7 @@ Why: the command line tool (E3) runs with `java -jar` and only has the mod JAR o
 
 ## ADR-CP-006: Keep the neighbours of played chunks (K8)
 
-Status: Accepted. The K5 extension it plans is ADR-CP-007.
+Status: Accepted. The K5 extension it plans is ADR-CP-007, replaced by ADR-CP-009.
 
 K1 stays at threshold 0. A new rule, K8, keeps a chunk that K1 does not keep when it lies within `protectNeighborRadiusChunks` chunks (Chebyshev distance, default 1, 0 turns it off) of a chunk that K1 keeps. It has its own id and reason in the reports. The docs say that the value on disk is an underestimate and what a value of 0 does and does not prove (SPEC section 2).
 
@@ -147,7 +147,7 @@ Options considered: a higher K1 threshold by default (it does not keep the zero 
 
 ## ADR-CP-007: What K5 keeps, and what world generation places
 
-Status: Accepted. Completes ADR-CP-006.
+Status: Superseded by ADR-CP-009. Completed ADR-CP-006.
 
 K5 keeps a chunk when its `entities/` entry holds an entity that a player cares about (a custom name, an owner, a fox's trust, an allay's liked player, a leash, a bucket release, an iron golem built by a player), that is persistent, or whose type a player places, builds or makes with commands (armor stands, frames, paintings, leash knots, end crystals, minecarts, boats and rafts, items on the ground, built golems, display and marker entities, and on 26.3 mannequins and cushions). Persistent entities and placed types do not keep the chunk when world generation placed them: the same entity, with no player mark, inside the structure that places it. The full list and the structures are in SPEC section 2.
 
@@ -169,3 +169,13 @@ Status: Accepted.
 `Engine.run` stays public in the published JAR. The region writer moves from `core/anvil` to `core/engine` and is package-private: the only way to rewrite a region file is `Engine.run`, which takes the session lock, plans, checks free space, backs up (unless the config turns it off), writes the journal and only then rewrites.
 
 Why: the mod's own entry points (the command line now, the startup hook and the singleplayer screen in M3) all go through `Engine.run`, and with backups and the journal it is the safe path. Another mod that calls it gets the same plan, free space check, backup and journal. It can still pass `takeSessionLock` false, as the startup hook (E1) will, where the server holds the lock: then it is the caller that must make sure the world is not loaded. A public region writer would let a caller rewrite region files with no backup and no journal. Java access rules do not stop reflection; they keep a direct call out of reach by accident.
+
+## ADR-CP-009: K5 keeps what world generation placed too
+
+Status: Accepted. Supersedes ADR-CP-007.
+
+K5 keeps a chunk when its `entities/` entry holds an entity that a player cares about (a custom name, an owner, a fox's trust, an allay's liked player, a leash, a bucket release, an iron golem built by a player), that is persistent, or whose type a player places, builds or makes with commands. The exception of ADR-CP-007 for what world generation places is gone: a persistent village cow, a taiga village armor stand, a mineshaft chest minecart or an end spike crystal keeps its chunk like the same entity placed by a player. The only exception left is the llama of a wandering trader leashed to its trader, which only the wandering trader spawner sets up. The definition is in SPEC section 2.
+
+Why: decided by the maintainer on 2026-11-16, after the M2 review. The exception relied on telling a generated entity from a player's by its type and the structure around it, and nothing in the saved data proves that a player never took, moved or put back such an entity (a minecart pushed back into its mineshaft, a villager moved by boat into another village). Keeping those chunks follows ADR-CP-003: the worst case is a chunk kept that could have gone. The cost, measured on the normal-terrain worlds (ARCHITECTURE, Performance and measurements), is small: K5 keeps 0 to 0.23 percent of the chunks that K1 and K8 alone would prune, against 0 to 0.06 percent with the exception in M2, and the difference is mineshaft chest minecarts.
+
+Option considered: keeping the exception (ADR-CP-007), a smaller cost but a guess on what the player did.
