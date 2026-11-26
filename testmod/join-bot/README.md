@@ -6,6 +6,11 @@
 
 It is a copy of the client written for Player Data Rescue (`testmod/join-bot/JoinBot.java` on its `dev` branch, commit `1171da1`, ADR-PDR-006 there), checked there on the eight Tier A dedicated servers. This copy is maintained here on its own. It differs from the original in one way: it reports its position after each teleport and then every second (`ServerboundMovePlayerPacket.PosRot`), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket`.
 
+Two fixes made in Player Data Rescue on the same change (its pull request 4, commits `7f51aca` and `caa27a9`) are carried over here:
+
+- When the server sends `start_configuration` (1.20.2 and later), the client stops its position reports until the next teleport, since play packets are not allowed in the configuration phase. A vanilla server only sends it from `/debugconfig`, which the 26.3 server registers only with the system properties `MC_DEBUG_ENABLED` and `MC_DEBUG_DEV_COMMANDS` set to true (`Commands`, `SharedConstants`, read in the 26.3 server JAR), so the fixture worlds never reach it.
+- A position report that fails to write no longer ends the client with a network error. The server may close the connection right after its disconnect packet; the client then stops reporting and reads on, so it still logs the disconnect and its reason.
+
 Why the change: on 1.20.1 and 1.21.1, `ServerGamePacketListenerImpl.handleAcceptTeleportPacket` moves the player without moving the server's chunk tracking, which only follows a position packet (`handleMovePlayer`). With the original client, a player teleported with RCON `tp` stayed tracked at its join position: the destination only got the 3 by 3 chunks of the `POST_TELEPORT` ticket, and `fill` there answered "That position is not loaded". On 26.3 the server accepts one position packet per client tick and resets that limit on `ServerboundClientTickEndPacket`, so a second position packet without it disconnects the client with "Invalid move player packet received".
 
 ## Packet ids and layouts
@@ -19,6 +24,10 @@ One profile per protocol: 763 (1.20.1), 767 (1.21.1) and 777 (26.3).
 The serverbound play ids kept from the original client (teleport accept, client information, keep-alive, pong, chunk batch received, player loaded) match the same sources and reports.
 
 ## Checks
+
+Every run of `scripts/make-fixture-world.ps1` (plan `strip`) and `scripts/check-pruned-world.ps1` checks the client: after each teleport, a `fill` around the destination must answer "Successfully filled" (the server only fills loaded chunks), and after the final RCON `kick` the client must log "disconnected by the server" with the kick reason.
+
+Checked once on 2026-11-26 on the vanilla 26.3 dedicated server started with `-DMC_DEBUG_ENABLED=true -DMC_DEBUG_DEV_COMMANDS=true`: `tp Explorer 400 120 0`, a `fill` there ("Successfully filled 25 block(s)"), `debugconfig config Explorer`, 5 s in the configuration phase, `debugconfig unconfig <uuid>`, then `tp Explorer -400 120 0` and a `fill` there ("Successfully filled 25 block(s)"), and the kick reason logged by the client. The client before these fixes was disconnected as soon as it reported a position in the configuration phase ("Received unknown packet id 31", the id of `move_player_pos_rot`).
 
 Checked on 2026-11-16 on the vanilla dedicated servers 1.20.1, 1.21.1 and 26.3 (`scripts/make-fixture-world.ps1` helpers): after `tp Bot 400 100 0`, `data get entity Bot Pos` answered `[400.5d, 100.0d, 0.5d]`, `fill 392 99 -8 407 99 7 minecraft:glass` answered "Successfully filled 256 block(s)", chunks generated around the destination up to the view distance, and the client stayed until it was kicked.
 
