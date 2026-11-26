@@ -1,11 +1,9 @@
 package fr.palawi.chunkpruner.core.rules;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.LongPredicate;
@@ -16,7 +14,6 @@ import java.util.function.LongPredicate;
  */
 public final class StructureGraph {
     private final Map<String, Integer> ids = new HashMap<>();
-    private final List<String> names = new ArrayList<>();
     private final Map<Long, int[]> starts = new HashMap<>();
     private final Map<Long, long[][]> references = new HashMap<>();
     private final Map<Long, int[]> referenceIds = new HashMap<>();
@@ -47,25 +44,6 @@ public final class StructureGraph {
             references.put(key, positions);
             referenceIds.put(key, structureIds);
         }
-    }
-
-    /** The ids of the structures that start in the chunk or reference it. */
-    public Set<String> structuresAt(int chunkX, int chunkZ) {
-        long key = pack(chunkX, chunkZ);
-        Set<String> result = new HashSet<>();
-        int[] startIds = starts.get(key);
-        if (startIds != null) {
-            for (int id : startIds) {
-                result.add(names.get(id));
-            }
-        }
-        int[] refIds = referenceIds.get(key);
-        if (refIds != null) {
-            for (int id : refIds) {
-                result.add(names.get(id));
-            }
-        }
-        return result;
     }
 
     /** How far a reference reaches: the game drops one more than 8 chunks away. */
@@ -148,9 +126,6 @@ public final class StructureGraph {
     }
 
     private int id(String name) {
-        return ids.computeIfAbsent(name, n -> {
-            names.add(n);
-            return names.size() - 1;
-        });
+        return ids.computeIfAbsent(name, n -> ids.size());
     }
 }

@@ -73,7 +73,7 @@ public final class Engine {
                 KeepRules rules = new KeepRules(settings.config(), id, data.protectedPoints());
                 ForcedChunks forced =
                         rules.checksForcedChunks() ? ForcedChunks.read(folder, data.layout()) : ForcedChunks.none();
-                PlayerEntities entities = new PlayerEntities(id, data.players());
+                PlayerEntities entities = new PlayerEntities(data.players());
                 DimensionScan scan = new DimensionScan(id, world, folder, rules, forced, entities, reader, warnings);
                 scan.run();
                 dimensions.add(scan.report());

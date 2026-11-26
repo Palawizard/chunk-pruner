@@ -245,7 +245,7 @@ final class DimensionScan {
                             x,
                             z,
                             "kept (K7): its entities cannot be checked for K5: " + fields.problem() + "."));
-                } else if (playerEntities.keeper(fields.entities(), structures.structuresAt(x, z)) != null) {
+                } else if (playerEntities.keeper(fields.entities()) != null) {
                     scan.playerEntity.set(index);
                 }
             }
