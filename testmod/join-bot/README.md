@@ -4,7 +4,7 @@
 
 ## Origin
 
-It is a copy of the client written for Player Data Rescue (`testmod/join-bot/JoinBot.java` on its `dev` branch, commit `1171da1`, ADR-PDR-006 there), checked there on the eight Tier A dedicated servers. This copy is maintained here on its own. It differs from the original in one way: it reports its position after each teleport and then every second (`ServerboundMovePlayerPacket.PosRot`), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket`.
+It is a copy of the client written for Player Data Rescue (`testmod/join-bot/JoinBot.java` on its `dev` branch, commit `1171da1`, ADR-PDR-006 there), checked there on the eight Tier A dedicated servers. This copy is maintained here on its own. It differs from the original in its position reports and in the two fixes listed below. It reports its position after each teleport and then every second (`ServerboundMovePlayerPacket.PosRot`), and on 26.3 it ends each of those client ticks with `ServerboundClientTickEndPacket`.
 
 Two fixes made in Player Data Rescue on the same change (its pull request 4, commits `7f51aca` and `caa27a9`) are carried over here:
 
