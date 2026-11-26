@@ -249,6 +249,19 @@ public final class Config {
         throw new JsonException(name + " must be a dimension id such as \"minecraft:overworld\"");
     }
 
+    public boolean autoPruneEnabled() {
+        return autoPruneEnabled;
+    }
+
+    public int autoPruneIntervalDays() {
+        return autoPruneIntervalDays;
+    }
+
+    /** {@link #MODE_DRY_RUN} or {@link #MODE_PRUNE}. */
+    public String autoPruneMode() {
+        return autoPruneMode;
+    }
+
     public long inhabitedThresholdTicks() {
         return inhabitedThresholdTicks;
     }
