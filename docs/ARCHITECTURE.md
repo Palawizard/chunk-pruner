@@ -164,5 +164,5 @@ The server part holds the startup hook and the commands, and the client part hol
 | normal terrain 1.21.1 | 2,828 | 3 (0.11 %) | 3 (0.11 %): 3 mineshaft chest minecarts |
 | normal terrain 26.3 | 2,779 | 4 (0.14 %) | 0 |
 
-  With the world generation exception of ADR-CP-007, K5 kept 0 to 0.06 percent of those chunks in M2 (2026-11-16); the chunks it keeps now on top of that are mineshaft chest minecarts.
+  The script and seed are those of M2, but world generation is not deterministic across runs, so these worlds differ slightly from the M2 ones (for example 3,090 prunable chunks on 1.20.1 in M2). With the world generation exception of ADR-CP-007, K5 kept 0 to 0.06 percent of those chunks in M2. Nothing in the prunable chunks of these worlds is a persistent entity of a structure, so the table does not show what villages, monuments, mansions, bastions or end cities cost: their chunks with persistent entities are always kept now, and in the End the ten end spike chunks too. On the committed 1.20.1 superflat world, K5 keeps one chunk of village cows.
   The test fails when K5 keeps more than 10 percent of those chunks on a world that was not made for K5.
