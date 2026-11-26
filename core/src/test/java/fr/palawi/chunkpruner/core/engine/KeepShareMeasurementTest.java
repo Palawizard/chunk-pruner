@@ -24,9 +24,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * How many of the overworld chunks that K1 and K8 alone would prune are kept by K4 and by K5,
  * computed with the test reader only, with the reasons per entity type. The numbers go to
- * {@code core/build/measurements/}, which
- * the CI job prints for the normal-terrain worlds. K5 must not keep more than 10 percent of those
- * chunks: above that the rule would empty the mod of its point (decided on 2026-11-16).
+ * {@code core/build/measurements/}, which the CI job prints for the normal-terrain worlds. K5 must
+ * not keep more than 10 percent of those chunks: above that the rule would empty the mod of its
+ * point (decided on 2026-11-16).
  */
 class KeepShareMeasurementTest {
     static Stream<Fixture> worlds() throws Exception {

@@ -69,7 +69,7 @@ public final class PlayerEntities {
             return id + " (persistent)";
         }
         if (isPlayerType(id)) {
-            return id + " (placed by a player)";
+            return id + " (a type a player places)";
         }
         if (entity.get("Passengers") instanceof List<?> passengers) {
             return keeper(passengers);
