@@ -1,11 +1,9 @@
 package fr.palawi.chunkpruner.core.rules;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.LongPredicate;
@@ -16,7 +14,6 @@ import java.util.function.LongPredicate;
  */
 public final class StructureGraph {
     private final Map<String, Integer> ids = new HashMap<>();
-    private final List<String> names = new ArrayList<>();
     private final Map<Long, int[]> starts = new HashMap<>();
     private final Map<Long, long[][]> references = new HashMap<>();
     private final Map<Long, int[]> referenceIds = new HashMap<>();
@@ -129,9 +126,6 @@ public final class StructureGraph {
     }
 
     private int id(String name) {
-        return ids.computeIfAbsent(name, n -> {
-            names.add(n);
-            return names.size() - 1;
-        });
+        return ids.computeIfAbsent(name, n -> ids.size());
     }
 }
