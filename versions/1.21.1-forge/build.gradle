@@ -8,6 +8,8 @@ apply from: '../shared/band.gradle'
 
 minecraft {
     mappings channel: 'official', version: project.minecraft_version
+    // Forge 52 runs with the Mojang names: a JAR renamed to SRG would call methods that do not exist.
+    reobf = false
 }
 
 repositories {
@@ -17,4 +19,10 @@ repositories {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+}
+
+tasks.named('jar', Jar) {
+    manifest {
+        attributes('MixinConfigs': 'chunkpruner.mixins.json')
+    }
 }
