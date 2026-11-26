@@ -89,8 +89,13 @@ try {
     $blockZ = $targetZ * 16 + 8
     Invoke-Rcon -Port $RconPort -Password $rconPassword -Command "tp Explorer $blockX 120 $blockZ" | Out-Null
     Start-Sleep -Seconds 15
+    # The fill only succeeds once the server loaded the destination around the player.
+    $fill = "fill $($blockX - 2) 119 $($blockZ - 2) $($blockX + 2) 119 $($blockZ + 2) minecraft:glass"
+    $answer = Invoke-Rcon -Port $RconPort -Password $rconPassword -Command $fill
+    if ($answer -notmatch 'Successfully filled') { throw "$Label`: '$fill' answered '$answer' after the teleport." }
     Invoke-Rcon -Port $RconPort -Password $rconPassword -Command 'kick Explorer Check done' | Out-Null
     Wait-ServerLog -ServerDir $serverDir -Process $server -Pattern 'Explorer left the game' -Seconds 60 -Offset $offset
+    Assert-JoinBotKicked -Process $bot -WorkDir $serverDir -Name 'Explorer' -Reason 'Check done'
     Invoke-Rcon -Port $RconPort -Password $rconPassword -Command 'save-all flush' | Out-Null
     Invoke-Rcon -Port $RconPort -Password $rconPassword -Command 'stop' | Out-Null
     if (-not $server.WaitForExit(120000)) { throw 'The server did not stop within 2 minutes.' }

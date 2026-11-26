@@ -245,7 +245,8 @@ try {
             # Stands for the blocks a player places: the game only saves InhabitedTime again
             # when the chunk's region data changes (MC-127407).
             $fill = "fill $($x - 2) 99 $($originZ - 2) $($x + 2) 99 $($originZ + 2) minecraft:glass"
-            Invoke-Rcon -Port $RconPort -Password $rconPassword -Command $fill | Out-Null
+            # 'Successfully filled' also proves that the server loaded the teleport destination.
+            Invoke-RconExpect -Command $fill -Pattern 'Successfully filled' | Out-Null
             Start-Sleep -Seconds 2
             $timeline += "explored strip: stop $($k + 1) at x=$x z=$originZ, 15 s, then a 5 by 5 glass fill under the player, 2 s"
         }
@@ -270,6 +271,7 @@ try {
 
     Invoke-Rcon -Port $RconPort -Password $rconPassword -Command "kick $botName Fixture done" | Out-Null
     Wait-ServerLog -ServerDir $serverDir -Process $server -Pattern "$botName left the game" -Seconds 60 -Offset $offset
+    Assert-JoinBotKicked -Process $bot -WorkDir $serverDir -Name $botName -Reason 'Fixture done'
     $timeline += "kicked after $([int]((Get-Date) - $joinedAt).TotalSeconds) s online"
     Invoke-Rcon -Port $RconPort -Password $rconPassword -Command 'save-all flush' | Out-Null
     Invoke-Rcon -Port $RconPort -Password $rconPassword -Command 'stop' | Out-Null
