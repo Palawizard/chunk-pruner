@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import fr.palawi.chunkpruner.core.config.Config;
 import fr.palawi.chunkpruner.core.fixture.Expected;
+import fr.palawi.chunkpruner.core.fixture.ExpectedEntities;
 import fr.palawi.chunkpruner.core.fixture.FixtureWorlds;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld.Chunk;
@@ -38,10 +39,10 @@ class KeepRulesFixtureTest {
         {-2, "item frame with a diamond", true},
         {-1, "minecart", true},
         {0, "boat", true},
-        {1, "end crystal placed from the item (ShowBottom false)", true},
+        {1, "end crystal without its base", true},
         {2, "dropped diamond", true},
-        {3, "chest minecart with a loot table, outside any mineshaft", true},
-        {4, "end crystal that shows its base, outside the End", true},
+        {3, "chest minecart with a loot table", true},
+        {4, "end crystal that shows its base", true},
         {5, "plain cow", false},
         {6, "nothing", false}
     };
@@ -157,12 +158,11 @@ class KeepRulesFixtureTest {
         Set<Long> withSpikeCrystal = new HashSet<>();
         ReferenceWorld reference = ReferenceWorld.read(FixtureWorlds.committed(name));
         for (Chunk c : ReferenceWorld.chunksIn(reference.end(), "entities", false)) {
+            if (ExpectedEntities.keeps(c, reference.players())) {
+                withCrystalOrFrame.add(c.key());
+            }
             for (Object e : (List<?>) c.nbt().getOrDefault("Entities", List.of())) {
-                Object id = ((Map<?, ?>) e).get("id");
-                if ("minecraft:end_crystal".equals(id) || "minecraft:item_frame".equals(id)) {
-                    withCrystalOrFrame.add(c.key());
-                }
-                if ("minecraft:end_crystal".equals(id) && c.z() < 20) {
+                if ("minecraft:end_crystal".equals(((Map<?, ?>) e).get("id")) && c.z() < 20) {
                     withSpikeCrystal.add(c.key());
                 }
             }
@@ -177,7 +177,7 @@ class KeepRulesFixtureTest {
         for (Chunk c : ReferenceWorld.chunksIn(ReferenceWorld.read(world).end(), "region", false)) {
             left.add(c.key());
         }
-        assertEquals(withCrystalOrFrame, left);
+        assertEquals(withCrystalOrFrame, left, "the End chunks left after the prune");
 
         Path off = FixtureWorlds.copy(FixtureWorlds.committed(name), temp.resolve("end-off"));
         Engine.run(settings(off, Config.fromJson("{\"protectPlayerEntities\": false}"), RunMode.PRUNE));
@@ -210,6 +210,12 @@ class KeepRulesFixtureTest {
         Engine.run(settings(world, Config.defaults(), RunMode.PRUNE));
         final long key = pen;
         assertTrue(ReferenceWorld.read(world).chunks("region", false).stream().anyMatch(c -> c.key() == key));
+
+        Path off = FixtureWorlds.copy(FixtureWorlds.committed("1.20.1"), temp.resolve("village-off"));
+        Engine.run(settings(off, Config.fromJson("{\"protectPlayerEntities\": false}"), RunMode.PRUNE));
+        assertTrue(
+                ReferenceWorld.read(off).chunks("region", false).stream().noneMatch(c -> c.key() == key),
+                "without K5 no other rule keeps the pen");
     }
 
     /** S8: the datapack dimension is left alone unless the config lists it. */
