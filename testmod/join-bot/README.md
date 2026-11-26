@@ -25,7 +25,7 @@ The serverbound play ids kept from the original client (teleport accept, client 
 
 ## Checks
 
-Every run of `scripts/make-fixture-world.ps1` (plan `strip`) and `scripts/check-pruned-world.ps1` checks the client: after each teleport, a `fill` around the destination must answer "Successfully filled" (the server only fills loaded chunks), and after the final RCON `kick` the client must log "disconnected by the server" with the kick reason.
+The scripts check the client on every run. A `fill` around the player must answer "Successfully filled" (the server only fills loaded chunks) after each of the four 15 s stops of the explored strip in `scripts/make-fixture-world.ps1`, after the village stop of its `keep` plan, and after the teleport into the pruned area in `scripts/check-pruned-world.ps1`. After the final RCON `kick`, in both scripts and on every plan, the client must log "disconnected by the server" with the kick reason. The teleports of the flown-over area are not checked this way.
 
 Checked once on 2026-11-26 on the vanilla 26.3 dedicated server started with `-DMC_DEBUG_ENABLED=true -DMC_DEBUG_DEV_COMMANDS=true`: `tp Explorer 400 120 0`, a `fill` there ("Successfully filled 25 block(s)"), `debugconfig config Explorer`, 5 s in the configuration phase, `debugconfig unconfig <uuid>`, then `tp Explorer -400 120 0` and a `fill` there ("Successfully filled 25 block(s)"), and the kick reason logged by the client. The client before these fixes was disconnected as soon as it reported a position in the configuration phase ("Received unknown packet id 31", the id of `move_player_pos_rot`).
 
