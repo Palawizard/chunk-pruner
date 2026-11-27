@@ -157,14 +157,31 @@ public final class Engine {
         return result;
     }
 
-    /** SPEC section 4, step 8, once the report is written and the journal deleted. */
+    /**
+     * SPEC section 4, step 8, once the report is written and the journal deleted. Both steps are
+     * tried, so a schedule that cannot be cleared does not stop the retention.
+     */
     private static void finish(Path world, RunSettings settings, String runId, RunResult result)
             throws CleanupException {
+        IOException failure = null;
         try {
             Schedule.clear(world);
+        } catch (IOException e) {
+            failure = new IOException("the schedule could not be cleared (" + e.getMessage() + ")", e);
+        }
+        try {
             Backups.applyRetention(world, settings.config().backupRetention(), runId);
         } catch (IOException e) {
-            throw new CleanupException(result, e);
+            IOException retention = new IOException("old backups could not be deleted (" + e.getMessage() + ")", e);
+            if (failure == null) {
+                failure = retention;
+            } else {
+                failure.addSuppressed(retention);
+                failure = new IOException(failure.getMessage() + "; " + retention.getMessage(), failure);
+            }
+        }
+        if (failure != null) {
+            throw new CleanupException(result, failure);
         }
     }
 
