@@ -119,6 +119,8 @@ try {
                 Start-Sleep -Milliseconds 500
             }
         }
+        # The batch is recorded only once its chunks are on disk.
+        Send-Quiet 'save-all flush' | Out-Null
         Send-Quiet 'forceload remove all' | Out-Null
         Add-Content -LiteralPath $doneFile -Value @($group | ForEach-Object { "$($_[0]) $($_[1])" }) -Encoding ascii
         $done += $group.Count
@@ -129,6 +131,10 @@ try {
     Send-Quiet 'stop' | Out-Null
     if (-not $server.WaitForExit(600000)) { throw 'The server did not stop within 10 minutes.' }
 } finally {
+    if (-not $server.HasExited) {
+        # On an error or Ctrl+C, the server saves what it generated before it is stopped for good.
+        try { Send-Quiet 'stop' | Out-Null; $server.WaitForExit(120000) | Out-Null } catch { }
+    }
     Stop-ProcessTree $server
 }
 # The server has stopped, so its region files can be read on every system.
