@@ -137,12 +137,12 @@ Code shared by the bands sits in `versions/shared/java` (every band) and `versio
 
 The singleplayer screen (E2) is not built yet: it is planned as a client mixin on `EditWorldScreen`, in a client part that dedicated servers never load.
 
-At startup (E1) the order is: an unfinished run when `chunkpruner/journal.json` exists, otherwise the schedule in `chunkpruner/schedule.json`, otherwise auto-prune when it is on and `autoPrune.intervalDays` have passed since `chunkpruner/auto-prune.json`. A world without `level.dat` (a new one) has nothing due. One run per startup. `StartupRun.atStartup` decides and runs it in the core, and `StartupHook` only logs the outcome, so the core tests cover every case on fixture worlds:
+At startup (E1) the order is: an unfinished run when `chunkpruner/journal.json` exists, otherwise the schedule in `chunkpruner/schedule.json`, otherwise auto-prune when it is on and `autoPrune.intervalDays` have passed since `chunkpruner/auto-prune.json`. A world without `level.dat` has nothing due. A new singleplayer world already has one when its integrated server starts (the client saves it first, read in the 1.20.1 and 26.3 sources), so with auto-prune on, its first load runs auto-prune on a world with no chunk yet. One run per startup. `StartupRun.atStartup` decides and runs it in the core, and `StartupHook` only logs the outcome, so the core tests cover every case on fixture worlds:
 
-- The journal is looked at before the config: with an unfinished run and a config file that is not valid, the startup stops, since the world would load with old and new region files mixed.
+- The journal is looked at before the config: with an unfinished run and a config file that is not valid or cannot be read or written, the startup stops, since the world would load with old and new region files mixed.
 - A run that fails before it wrote its journal, or a config file that is not valid without a journal, is logged and the server starts; nothing was changed.
 - A run that leaves its journal stops the startup with the engine's message.
-- A done run logs its report. A prune, resumed or not, clears the schedule (the engine does it) and counts as the last auto-prune run, so neither runs it a second time. When clearing the schedule, the retention or the auto-prune record then fails, the log says the run happened and what runs again at the next startup.
+- A done run logs its report. A prune, resumed or not, clears the schedule (the engine does it) and, when auto-prune is on, counts as its last run, so neither runs it a second time. Clearing the schedule and the retention are both tried even when the other fails. When clearing the schedule, the retention or the auto-prune record then fails, the log says the run happened and what runs again at the next startup.
 
 ## Concurrency and safety
 
