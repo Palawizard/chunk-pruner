@@ -13,14 +13,16 @@ param(
 # A world played with the real client, pruned with the command line, then opened again in the real
 # client (docs/TESTING.md, Played world). On a vanilla 1.21.1 dedicated server, the real client
 # (player "Player") and the headless join client ("Builder") join; RCON builds a glass room with a
-# chest, two named animals, an armor stand and an item frame where the real client stands, a stone
-# tower where the join client stands, and flies the real client over a line of chunks. Then:
+# chest, two named animals, an armor stand and an item frame where the real client stands, a
+# cobblestone tower where the join client stands, and flies the real client over a line of chunks.
+# Then:
 #   1. dry run and prune of a copy with `java -jar <Jar>`;
 #   2. that copy opened on the vanilla server with the real client: every build, the chest items
 #      and every entity are still there, and a flown-over chunk that was pruned generates again;
 #   3. restore.txt followed on a second pruned copy: the world is byte for byte as before the prune;
 #   4. the session lock: with a copy open in the real client in singleplayer, the command line
-#      refuses with exit code 3, writes nothing and leaves the region files as they were.
+#      refuses with exit code 3, writes nothing and leaves the region files as they were (Linux and
+#      macOS only: Windows does not let the script read the files the game keeps open).
 # The client opens windows on the desktop and closes them when its part is done. The work folders
 # are in build/played-world/. Works on Windows PowerShell 5.1 and on PowerShell 7; checked so far
 # on Linux with Hyprland.
@@ -59,8 +61,15 @@ function Send-Rcon {
 function Start-Server {
     Remove-Item -LiteralPath (Join-Path $serverDir 'logs/latest.log') -ErrorAction SilentlyContinue
     $process = Start-VanillaServer -ServerDir $serverDir -JavaExe $javaExe -ServerJar $serverJar
-    Wait-ServerLog -ServerDir $serverDir -Process $process -Pattern 'Done \([^)]+\)! For help' -Seconds 300
-    Send-Rcon -Command 'list' | Out-Null
+    $ready = $false
+    try {
+        Wait-ServerLog -ServerDir $serverDir -Process $process -Pattern 'Done \([^)]+\)! For help' -Seconds 300
+        Send-Rcon -Command 'list' | Out-Null
+        $ready = $true
+    } finally {
+        # A failure or Ctrl+C while it starts must not leave the server running with the world open.
+        if (-not $ready) { Stop-ProcessTree $process }
+    }
     return $process
 }
 
@@ -78,8 +87,19 @@ function Start-Player {
 }
 
 function Wait-PlayerJoined {
-    param([System.Diagnostics.Process]$Server, [int]$Offset)
-    Wait-ServerLog -ServerDir $serverDir -Process $Server -Pattern 'Player\[[^\]]*\] logged in' -Seconds 300 -Offset $Offset
+    # Also stops waiting when the client stops, so a client that crashes at start says so.
+    param([System.Diagnostics.Process]$Server, [hashtable]$Client, [int]$Offset)
+    $deadline = (Get-Date).AddSeconds(300)
+    while ($true) {
+        $text = Get-ServerLogText $serverDir
+        if ($text.Length -gt $Offset -and $text.Substring($Offset) -match 'Player\[[^\]]*\] logged in') { break }
+        if (-not (Test-RealClientRunning -Client $Client)) {
+            throw "The real client stopped before it joined the server, see $(Join-Path $Client.GameDir 'logs/latest.log')."
+        }
+        if ($Server.HasExited) { throw 'The server stopped while the real client was joining.' }
+        if ((Get-Date) -gt $deadline) { throw 'The real client did not join the server within 300 s.' }
+        Start-Sleep -Seconds 1
+    }
     Start-Sleep -Seconds 5
 }
 
@@ -139,7 +159,7 @@ $bot = $null
 try {
     $offset = (Get-ServerLogText $serverDir).Length
     $client = Start-Player -GameDir (Join-Path $work 'client-play')
-    Wait-PlayerJoined -Server $server -Offset $offset
+    Wait-PlayerJoined -Server $server -Client $client -Offset $offset
     $pos = Send-Rcon -Command 'data get entity Player Pos' -Pattern '\['
     if ($pos -notmatch '\[(-?[0-9.]+)d, (-?[0-9.]+)d, (-?[0-9.]+)d\]') { throw "No position in '$pos'." }
     $ox = [int][Math]::Floor([double]$Matches[1]) + 64
@@ -159,7 +179,8 @@ try {
     Send-Rcon -Command "summon item_frame $($ox + 3) $($y + 1) $oz {Facing:4b,Item:{id:`"minecraft:emerald`",count:1}}" -Pattern 'Summoned' | Out-Null
     Start-Sleep -Seconds 40
 
-    # The join client builds a stone tower 400 blocks east and stands there for 20 s.
+    # The join client stands 400 blocks east, RCON builds a cobblestone tower next to it, and the
+    # join client stays about 35 s.
     Install-JoinBotClasses -JavaExe $javaExe -Destination (Join-Path $serverDir 'join-bot')
     $botOffset = (Get-ServerLogText $serverDir).Length
     $bot = Start-JoinBotProcess -JavaExe $javaExe -ClassDir 'join-bot' -WorkDir $serverDir -Port $ServerPort `
@@ -209,7 +230,8 @@ if ($prune.Code -ne 0) { throw "The prune failed: $($prune.Output)" }
 $summary = ($prune.Output -split "`r?`n" | Where-Object { $_ -match '^Removed ' } | Select-Object -First 1)
 if (-not $summary) { throw "The prune removed nothing: $($prune.Output)" }
 Write-Host "  $summary"
-foreach ($chunk in @($base, $tower)) {
+$roomEnds = @([int][Math]::Floor(($ox - 4) / 16), [int][Math]::Floor(($ox + 4) / 16))
+foreach ($chunk in @(@($roomEnds[0], $base[1]), @($roomEnds[1], $base[1]), $tower)) {
     if (-not (Test-ChunkPresent -World $pruned -ChunkX $chunk[0] -ChunkZ $chunk[1])) { throw "The prune removed played chunk $($chunk -join ', ')." }
 }
 $flyChunkZ = [int][Math]::Floor($flyZ / 16)
@@ -234,18 +256,29 @@ $client = $null
 try {
     $offset = (Get-ServerLogText $serverDir).Length
     $client = Start-Player -GameDir (Join-Path $work 'client-reopen')
-    Wait-PlayerJoined -Server $server -Offset $offset
+    Wait-PlayerJoined -Server $server -Client $client -Offset $offset
     Send-Rcon -Command "tp Player $ox $y $oz" -Pattern 'Teleported' | Out-Null
     Start-Sleep -Seconds 10
-    Send-Rcon -Command "execute if block $ox $($y - 1) $oz minecraft:stone" -Pattern 'Test passed' | Out-Null
-    Send-Rcon -Command "execute if block $($ox + 4) $($y + 1) $oz minecraft:glass" -Pattern 'Test passed' | Out-Null
-    Send-Rcon -Command "data get block $($ox + 2) $y $($oz + 2) Items" -Pattern 'minecraft:diamond.*count: 7|count: 7.*minecraft:diamond' | Out-Null
+    # Both ends of the room, which can lie in two chunks.
+    foreach ($x in @(($ox - 4), ($ox + 4))) {
+        Send-Rcon -Command "execute if block $x $($y - 1) $oz minecraft:stone" -Pattern 'Test passed' | Out-Null
+        Send-Rcon -Command "execute if block $x $($y + 1) $oz minecraft:glass" -Pattern 'Test passed' | Out-Null
+    }
+    $items = Send-Rcon -Command "data get block $($ox + 2) $y $($oz + 2) Items"
+    foreach ($pattern in 'id: "minecraft:diamond"', 'count: 7', 'id: "minecraft:golden_apple"', 'count: 2') {
+        if (-not $items.Contains($pattern)) { throw "The chest holds '$items', without $pattern." }
+    }
     Send-Rcon -Command 'execute if entity @e[type=cow,name=Daisy]' -Pattern 'Test passed' | Out-Null
     Send-Rcon -Command 'execute if entity @e[type=pig,name=Bacon]' -Pattern 'Test passed' | Out-Null
-    Send-Rcon -Command 'data get entity @e[type=armor_stand,limit=1] ArmorItems' -Pattern 'minecraft:diamond_helmet' | Out-Null
-    Send-Rcon -Command 'data get entity @e[type=item_frame,limit=1] Item' -Pattern 'minecraft:emerald' | Out-Null
+    Send-Rcon -Command "data get entity @e[type=armor_stand,x=$ox,y=$y,z=$oz,distance=..6,limit=1] ArmorItems" -Pattern 'minecraft:diamond_helmet' | Out-Null
+    Send-Rcon -Command "data get entity @e[type=item_frame,x=$ox,y=$y,z=$oz,distance=..6,limit=1] Item" -Pattern 'minecraft:emerald' | Out-Null
     Send-Rcon -Command "forceload add $tx $oz" -Pattern 'Marked' | Out-Null
-    Send-Rcon -Command "execute if block $tx $y $oz minecraft:cobblestone" -Pattern 'Test passed' | Out-Null
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        Start-Sleep -Seconds 1
+        $towerBlock = Send-Rcon -Command "execute if block $tx $y $oz minecraft:cobblestone"
+    } while ($towerBlock -notmatch 'Test passed' -and (Get-Date) -lt $deadline)
+    if ($towerBlock -notmatch 'Test passed') { throw "The tower block answered '$towerBlock'." }
     Send-Rcon -Command "forceload remove $tx $oz" | Out-Null
     $results += 'reopened: the room, the chest items, Daisy, Bacon, the armor stand helmet, the item frame and the tower are there'
     Send-Rcon -Command "tp Player $($target[0] * 16 + 8) 220 $($target[1] * 16 + 8)" -Pattern 'Teleported' | Out-Null
@@ -289,24 +322,30 @@ New-Item -ItemType Directory -Path $saves -Force | Out-Null
 $lockWorld = Join-Path $saves 'LockTest'
 Copy-Item -LiteralPath $played -Destination $lockWorld -Recurse
 $client = $null
-try {
+if ($OnWindows) {
+    # The open game keeps its region files open, which Windows does not let this script read.
+    Write-Host '  session lock: skipped on Windows (see docs/TESTING.md, Checks on Windows)'
+} else { try {
     $client = Start-Player -GameDir $gameDir -World 'LockTest'
-    if (-not (Wait-RealClientLog -Client $client -Pattern 'Player joined the game|Player\[local\] logged in' -Seconds 300)) { throw 'The real client did not open the singleplayer world.' }
+    if (-not (Wait-RealClientLog -Client $client -Pattern 'Player joined the game|Player\[local[^\]]*\] logged in' -Seconds 300)) { throw 'The real client did not open the singleplayer world.' }
     Start-Sleep -Seconds 5
     $before = Get-StorageHashes -World $lockWorld
     foreach ($arguments in @(@('--world', $lockWorld), @('--world', $lockWorld, '--dry-run'))) {
         $refused = Invoke-Cli -Arguments $arguments
         if ($refused.Code -ne 3) { throw "With the world open, the command line answered exit code $($refused.Code): $($refused.Output)" }
+        if ($refused.Output -notmatch 'is open in another program') { throw "With the world open, the command line refused for another reason: $($refused.Output)" }
         Write-Host "  $(($refused.Output -split "`r?`n" | Where-Object { $_ } | Select-Object -First 1))"
     }
     if (Test-Path -LiteralPath (Join-Path $lockWorld 'chunkpruner')) { throw 'The refused run wrote a chunkpruner folder.' }
     Compare-Hashes -Expected $before -Actual (Get-StorageHashes -World $lockWorld) -What 'with the world open'
-    $results += 'session lock: with the world open in the real client, prune and dry run exit with code 3 and write nothing'
     Close-RealClient -Client $client | Out-Null
     $client = $null
+    $free = Invoke-Cli -Arguments @('--world', $lockWorld, '--dry-run')
+    if ($free.Code -ne 0) { throw "Once the game closed, the dry run answered exit code $($free.Code): $($free.Output)" }
+    $results += 'session lock: with the world open in the real client, prune and dry run exit with code 3 and write nothing; once it closes, the dry run runs'
 } finally {
     if ($client) { Stop-RealClientProcess -Client $client }
-}
+} }
 
 Write-Host 'Played world checks:' -ForegroundColor Green
 $results | ForEach-Object { Write-Host "  $_" -ForegroundColor Green }
