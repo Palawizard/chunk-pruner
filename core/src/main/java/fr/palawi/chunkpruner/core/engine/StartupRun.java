@@ -21,7 +21,7 @@ import java.util.Optional;
  * What runs at server startup (E1, SPEC sections 3 and 4): the end of an unfinished run when a
  * journal exists, otherwise the pending schedule, otherwise auto-prune when it is on and its
  * interval has passed since its last run. One run per startup. A prune that finishes, resumed or
- * not, clears the schedule (the engine does it) and counts as the last auto-prune run.
+ * not, clears the schedule (the engine does it) and, when auto-prune is on, counts as its last run.
  */
 public final class StartupRun {
     static final String AUTO_PRUNE_FILE = "auto-prune.json";
@@ -95,14 +95,17 @@ public final class StartupRun {
         try {
             config = source.load();
         } catch (IOException | JsonException e) {
+            String problem = e instanceof JsonException
+                    ? "the config file is not valid (" + e.getMessage() + ")"
+                    : "the config file cannot be read or written (" + e.getMessage() + ")";
             if (Journal.exists(world)) {
                 throw new StartupRefusedException(
-                        "the config file is not valid (" + e.getMessage() + ") and the world has an unfinished run,"
-                                + " which must be finished before the world loads. Fix the config file and start"
-                                + " the server again.",
+                        problem + " and the world has an unfinished run, which must be finished before the world"
+                                + " loads. Fix the config file, or the rights on its folder, and start the server"
+                                + " again.",
                         e);
             }
-            return new NotRun("the config file is not valid (" + e.getMessage() + ")", e);
+            return new NotRun(problem, e);
         }
         Optional<Plan> due;
         try {

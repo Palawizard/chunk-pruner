@@ -21,6 +21,7 @@ import fr.palawi.chunkpruner.core.engine.StartupRun.Trigger;
 import fr.palawi.chunkpruner.core.fixture.FixtureWorlds;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld;
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -179,6 +180,41 @@ class StartupRunTest {
         assertTrue(Schedule.read(world).isEmpty());
         assertEquals(Optional.of(NOW), StartupRun.lastAutoPrune(world));
         assertInstanceOf(NothingDue.class, atStartup(Config.fromJson(AUTO_DRY_RUN)));
+    }
+
+    @Test
+    void aPruneWithAutoPruneOffWritesNoAutoPruneRecord() throws Exception {
+        new Schedule(RunMode.PRUNE, NOW).write(world);
+        assertInstanceOf(Done.class, atStartup(Config.defaults()));
+        assertFalse(Files.exists(StartupRun.autoPruneFile(world)));
+    }
+
+    @Test
+    void aConfigThatCannotBeWrittenIsNotCalledInvalid() throws Exception {
+        interruptAPrune();
+        ConfigSource unwritable = () -> {
+            throw new AccessDeniedException("config/chunkpruner.json.tmp");
+        };
+        StartupRefusedException e = assertThrows(
+                StartupRefusedException.class, () -> StartupRun.atStartup(world, unwritable, CLOCK, settings()));
+        assertTrue(e.getMessage().startsWith("the config file cannot be read or written ("), e.getMessage());
+    }
+
+    /** The schedule cannot be cleared: the retention still runs, and both are in one problem. */
+    @Test
+    void aScheduleThatCannotBeClearedDoesNotStopTheRetention() throws Exception {
+        Path old = world.resolve("chunkpruner/backups/20200101-000000-prune");
+        Files.createDirectories(old);
+        Files.writeString(old.resolve("restore.txt"), "old backup");
+        Files.createDirectories(Schedule.file(world).resolve("in-the-way"));
+        Config autoPrune =
+                Config.fromJson("{\"backupRetention\": 1, \"autoPrune\": {\"enabled\": true, \"mode\": \"prune\"}}");
+        Done done = assertInstanceOf(Done.class, atStartup(autoPrune));
+        assertEquals(Trigger.AUTO_PRUNE, done.plan().trigger());
+        assertFalse(Files.exists(old), "the retention deleted the old backup");
+        assertTrue(
+                done.problems().get(0).contains("the schedule could not be cleared"),
+                done.problems().toString());
     }
 
     /** The prune is done; only its auto-prune record failed, and the problem says what runs again. */
