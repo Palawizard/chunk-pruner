@@ -55,9 +55,25 @@ The acceptance scenarios are listed in [SPEC.md](SPEC.md). Each one maps to at l
 | S6 | `DamagedRegionFixtureTest`: on a copy of a real region file, one chunk gets an unknown compression id, one gets its data overwritten, one points to a missing `.mcc` file, one gets the custom id 127. They are kept (K7), warned about, and the rest is pruned. `Lz4FixtureTest` covers LZ4 with and without the library. |
 | S7 | `SafetyFixtureTest`: a second Java process holds `session.lock` and the command line refuses with exit code 3 and writes nothing; a lock held in the same process is refused too. On Windows the lock is mandatory and the locked bytes cannot be read, so the test compares the world's checksums once the second process has let it go (see Checks on Windows). |
 | S8 | `KeepRulesFixtureTest`: with the default config every file of `examplemod:mining` keeps its SHA-256 after a prune; with the dimension in `dimensions.include` its files change. |
+| S9, S10 | `prod-smoke.ps1`, boot 1 (In-game scenarios below), on the eight Tier A bands; `ServerCommandsTest` checks the command replies, S10 included, on a copy of a committed world. |
 | S11 | `SafetyFixtureTest`: free space is injected (`FreeSpace`); one byte under the size of the files to change plus the largest of them, plus 10 percent, stops the prune before any change, a dry run warns, and the exact amount lets it run. |
+| S12 | `prod-smoke.ps1`, boot 3, on the six bands of 1.21.1 and 26.3 (1.20.1 has no LZ4 setting); `Lz4FixtureTest` covers the engine with and without the library. |
 
-S9, S10 and S12 in game depend on the in-game contexts (M3). `SafetyFixtureTest` also prunes through the command line, and `check-release-artifacts.ps1` runs a dry run and a prune with each release JAR on a copy of the committed world of its version. `NbtFieldReaderTest` covers the NBT nesting limit (512 levels read, 513 refused, through skipped and kept compounds and lists). `KeepShareMeasurementTest` writes what K4 and K5 keep to `core/build/measurements/` (ARCHITECTURE, Performance and measurements).
+`SafetyFixtureTest` also prunes through the command line, and `check-release-artifacts.ps1` runs a dry run and a prune with each release JAR on a copy of the committed world of its version. `NbtFieldReaderTest` covers the NBT nesting limit (512 levels read, 513 refused, through skipped and kept compounds and lists). `KeepShareMeasurementTest` writes what K4 and K5 keep to `core/build/measurements/` (ARCHITECTURE, Performance and measurements).
+
+## In-game scenarios (production-JAR smoke test)
+
+`scripts/prod-smoke.ps1` runs the scenarios of `scripts/smoke-scenarios.ps1` on each band's real dedicated server with the release JAR, over five boots of the same world, on every pull request:
+
+| Boot | Checks |
+|---|---|
+| 1 | S9: the headless join client, a vanilla client without the mod, joins, is teleported 800 blocks away, a `fill` there succeeds, and it logs its kick. `/chunkpruner status` shows nothing scheduled. S10: with a dry run scheduled and no dry-run report, `/chunkpruner schedule prune` is refused with the message asking for a dry run, and the dry run stays scheduled. The mod wrote `config/chunkpruner.json`. The server runs with `function-permission-level=3`. |
+| 2 | E1: the scheduled dry run runs at startup, its log lines come before the server is ready, `/chunkpruner report` shows "Would remove", and `/chunkpruner schedule prune` is accepted. Permission level 4: a data pack added after boot 1 has two functions, which the game loads at level 3; the one that runs `say` loads and runs, the one that runs `chunkpruner status` does not load. With RCON (level 4) running the command, this shows the command needs level 4 exactly. |
+| 3 | E1: the scheduled prune runs at startup and removes chunks, the schedule is cleared, the backup has its `restore.txt`, the report warns of no unreadable chunk, and the world then loads with no region error. S12: on 1.21.1 and 26.3 the server writes LZ4 regions (`region-file-compression=lz4`; the compression byte of the first chunk in the overworld region files is 4 before the prune), the engine finds the game's LZ4 codec (`lz4Available` in the report) and prunes them. |
+| 4 | Auto-prune, turned on in the config, runs a dry run at startup, records it in `chunkpruner/auto-prune.json`, and `/chunkpruner status` shows when it runs next. |
+| 5 | An unfinished run that cannot be finished (`chunkpruner/journal.json` with no plan): the server stops before it loads the world, never logs that it is ready, logs the reason, and every file of the world keeps its SHA-256, region files included, except `chunkpruner/`, `session.lock`, `level.dat` and `level.dat_old`, which the check leaves out: the game saves `level.dat` as it stops (seen on the eight bands in a run that compared it). On 1.20.1 and 1.21.1 the stop also logs a `NullPointerException`, since no level exists to save. |
+
+The smoke test only starts dedicated servers. E1 on the integrated server of singleplayer goes through the same `loadLevel` hook (ARCHITECTURE, Hook points), but it has not run in game yet.
 
 ## Checks on Windows
 

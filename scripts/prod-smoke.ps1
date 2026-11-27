@@ -14,10 +14,13 @@ param(
 
 # Production smoke test: install the loader's real dedicated server for one band, drop
 # the packaged JAR into mods/, boot the server, check that the mod logged its loaded
-# line, then stop the server over RCON and check that it shut down cleanly. This tests
-# the file players install, not a dev run (gradlew runServer).
+# line, run the scenarios of scripts/smoke-scenarios.ps1 over several boots of the same
+# world, stop the server over RCON and check that it shut down cleanly each time. This
+# tests the file players install, not a dev run (gradlew runServer).
 
 . (Join-Path $PSScriptRoot 'common.ps1')
+. (Join-Path $PSScriptRoot 'vanilla-server.ps1')
+. (Join-Path $PSScriptRoot 'smoke-scenarios.ps1')
 
 $band = (Get-VersionMatrix).bands | Where-Object { $_.id -eq $BandId } | Select-Object -First 1
 if (-not $band) { throw "Unknown band '$BandId'." }
@@ -91,7 +94,7 @@ function Get-InstallerLaunchArgs {
 
 function Write-ServerConfig {
     Set-Content -LiteralPath (Join-Path $serverDir 'eula.txt') -Value 'eula=true' -Encoding ascii
-    Set-Content -LiteralPath (Join-Path $serverDir 'server.properties') -Encoding ascii -Value @(
+    Set-Content -LiteralPath (Join-Path $serverDir 'server.properties') -Encoding ascii -Value (@(
         'online-mode=false'
         "server-port=$ServerPort"
         'enable-rcon=true'
@@ -101,7 +104,11 @@ function Write-ServerConfig {
         'simulation-distance=4'
         'spawn-protection=0'
         'level-name=smokeworld'
-    )
+        # 26.3 turns the whitelist on by default; the join client is not on it.
+        'white-list=false'
+        # The join client stands in the air after a teleport; without this the server kicks it.
+        'allow-flight=true'
+    ) + @(Get-SmokeServerProperties))
 }
 
 function Reset-ServerState {
@@ -110,7 +117,7 @@ function Reset-ServerState {
     if (Test-Path -LiteralPath $mods) { Remove-Item -LiteralPath $mods -Recurse -Force }
     New-Item -ItemType Directory -Path $mods -Force | Out-Null
     Copy-Item -LiteralPath $ModJar -Destination $mods
-    foreach ($stale in 'smokeworld', 'logs', 'crash-reports') {
+    foreach ($stale in 'smokeworld', 'logs', 'crash-reports', 'config/chunkpruner.json') {
         $path = Join-Path $serverDir $stale
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
     }
@@ -174,12 +181,16 @@ function Get-ServerLog {
 }
 
 function Invoke-Server {
-    param([string]$JavaExe, [string[]]$LaunchArgs)
+    # Boots the server, runs $WhileRunning once it is ready, stops it over RCON and returns the
+    # log of this boot. A failure in $WhileRunning is thrown after the server stopped.
+    param([string]$JavaExe, [string[]]$LaunchArgs, [string]$Boot, [scriptblock]$WhileRunning)
     $stdout = Join-Path $serverDir 'smoke.stdout.log'
     $stderr = Join-Path $serverDir 'smoke.stderr.log'
     Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+    # The log of the previous boot would show its 'Done' line, and its checks, before this server starts.
+    Remove-Item -LiteralPath (Join-Path $serverDir 'logs/latest.log') -Force -ErrorAction SilentlyContinue
 
-    Write-Host "Starting the $BandId/$Loader dedicated server with the release JAR"
+    Write-Host "Starting the $BandId/$Loader dedicated server with the release JAR ($Boot)"
     $startArgs = @{
         FilePath               = $JavaExe
         ArgumentList           = $LaunchArgs
@@ -195,10 +206,19 @@ function Invoke-Server {
     $started = $false
     $stopSent = $false
     $rconFailures = 0
+    $scenarioDone = $false
+    $scenarioError = $null
+    $script:serverProcess = $process
     try {
         while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
             $log = Get-ServerLog
             $started = $log -match 'Done \([^)]+\)! For help'
+            if ($started -and -not $scenarioDone) {
+                $scenarioDone = $true
+                if ($WhileRunning) {
+                    try { & $WhileRunning } catch { $scenarioError = $_ }
+                }
+            }
             if ($started -and -not $stopSent) {
                 # The RCON listener can open a little after the "Done" line.
                 try { Stop-ServerWithRcon; $stopSent = $true }
@@ -222,8 +242,9 @@ function Invoke-Server {
     if (-not $loadedLine) { throw "$BandId/$Loader started, but the log has no '$expectedLine' line." }
     if (-not $stopSent) { throw "$BandId/$Loader could not be stopped over RCON." }
     if ($log -notmatch 'Stopping (the )?server') { throw "$BandId/$Loader did not log a clean shutdown." }
+    if ($scenarioError) { throw "$BandId/$Loader, $Boot`: $($scenarioError.Exception.Message)" }
     Write-Host "  log: $($loadedLine.Trim())"
-    Write-Host "$BandId/$Loader OK: the release JAR loaded on a real dedicated server, which then stopped cleanly." -ForegroundColor Green
+    return $log
 }
 
 if (-not $SkipBuild) {
@@ -270,4 +291,5 @@ if ($Loader -eq 'fabric') {
 } else {
     $launchArgs = Get-InstallerLaunchArgs
 }
-Invoke-Server -JavaExe $javaExe -LaunchArgs $launchArgs
+Invoke-SmokeScenarios -JavaExe $javaExe -LaunchArgs $launchArgs
+Write-Host "$BandId/$Loader OK: the release JAR loaded on a real dedicated server, every scenario passed, and the server stopped cleanly each time." -ForegroundColor Green

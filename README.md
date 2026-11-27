@@ -50,7 +50,7 @@ java -jar chunk-pruner-<minecraft>-<loader>-<version>.jar --world <path-to-world
 
 Use the Java version of the JAR's Minecraft band (17, 21 or 25). Start with `--dry-run`: it only writes a report to `<world>/chunkpruner/reports/`. Without it the chunks are removed, after every changed file is copied to `<world>/chunkpruner/backups/<run>`. To undo a run, follow the `restore.txt` of its backup. If a run is interrupted, the next one finishes it first.
 
-Commands require permission level 4 by default. The exact rules are in [docs/SPEC.md](docs/SPEC.md).
+Commands require permission level 4. The exact rules are in [docs/SPEC.md](docs/SPEC.md).
 
 ## Documentation
 

@@ -20,9 +20,14 @@ java {
     }
 }
 
+// Code shared by the bands: every band (shared/java) and every loader of this Minecraft version
+// (common-<minecraft>/java). It is formatted by versions/build.gradle (core/gradlew -p versions
+// spotlessCheck).
 sourceSets {
     main {
         java.srcDir rootProject.file('../../core/src/main/java')
+        java.srcDir rootProject.file('../shared/java')
+        java.srcDir rootProject.file("../common-${project.minecraft_version}/java")
     }
 }
 

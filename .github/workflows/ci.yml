@@ -86,6 +86,14 @@ jobs:
           cd core
           ./gradlew clean build --no-daemon -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64
 
+      - name: Check formatting of the code shared by the bands
+        run: |
+          gradle_java=$(jq -r '.core.gradleJava' versions/version-matrix.json)
+          JAVA_HOME="$(printenv "JAVA_HOME_${gradle_java}_X64")" || { echo "No JDK ${gradle_java} set up."; exit 1; }
+          export JAVA_HOME
+          cd core
+          ./gradlew -p ../versions spotlessCheck --no-daemon
+
   fixtures:
     name: Fixture worlds ${{ matrix.minecraft }}
     runs-on: ubuntu-latest

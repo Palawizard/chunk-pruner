@@ -2,6 +2,7 @@ package fr.palawi.chunkpruner.core.cli;
 
 import fr.palawi.chunkpruner.core.config.Config;
 import fr.palawi.chunkpruner.core.config.JsonException;
+import fr.palawi.chunkpruner.core.engine.CleanupException;
 import fr.palawi.chunkpruner.core.engine.Engine;
 import fr.palawi.chunkpruner.core.engine.NotEnoughSpaceException;
 import fr.palawi.chunkpruner.core.engine.RunContext;
@@ -113,6 +114,10 @@ public final class CommandLine {
             return EXIT_REFUSED;
         } catch (WorldException e) {
             err.println(e.getMessage());
+            return EXIT_ERROR;
+        } catch (CleanupException e) {
+            String message = e.getMessage();
+            err.println(Character.toUpperCase(message.charAt(0)) + message.substring(1));
             return EXIT_ERROR;
         } catch (IOException | RuntimeException e) {
             err.println("The run failed: " + e.getMessage());

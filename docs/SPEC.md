@@ -68,9 +68,9 @@ All three contexts call the same engine with the same config and write the same 
    - Write a compacted file with only the kept chunks. Their sectors are copied byte for byte, with no recompression, and the header is rebuilt.
    - Delete the file when no chunk is left in it, and the `.mcc` files of the chunks that go.
    - Writes are atomic (`.tmp`, fsync, move). After each region, mark it `done` in the journal.
-8. Finish. Write the report, delete the journal, apply backup retention (keep the backup of this run and the newest others up to `backupRetention` backups, delete the older ones; a prune with nothing to remove applies it too) and clear the schedule.
+8. Finish. Write the report, delete the journal, clear the schedule, then apply backup retention (keep the backup of this run and the newest others up to `backupRetention` backups, delete the older ones; a prune with nothing to remove applies it too). If clearing the schedule or the retention fails, the run is done and its error says so.
 
-If a journal exists at startup (E1), or when E2 or E3 opens the world, the previous run was interrupted. Whatever was asked, a dry run included, the engine finishes the `pending` regions with the recorded decisions: a file still as planned is rewritten, a file already as the plan leaves it is kept, and the run stops if a file is neither. It then writes the recorded report with a `resumed` warning (or keeps the report when the interrupted run had already written it), deletes the journal and applies the retention. A new run never starts while a journal exists. When a file changed since the plan (the world was opened or edited in between), every run stops with the same error and says how to leave that state: follow the backup's `restore.txt`, if there is a backup, then delete `chunkpruner/journal.json` and `chunkpruner/journal-plan.json`. A plan without its state file comes from a run stopped before its first rewrite, which changed nothing; it is deleted.
+If a journal exists at startup (E1), or when E2 or E3 opens the world, the previous run was interrupted. Whatever was asked, a dry run included, the engine finishes the `pending` regions with the recorded decisions: a file still as planned is rewritten, a file already as the plan leaves it is kept, and the run stops if a file is neither. It then writes the recorded report with a `resumed` warning (or keeps the report when the interrupted run had already written it), deletes the journal, clears the schedule and applies the retention. In E1, a config file that is not valid does not let a world with a journal load: the server stops until the config is fixed. A new run never starts while a journal exists. When a file changed since the plan (the world was opened or edited in between), every run stops with the same error and says how to leave that state: follow the backup's `restore.txt`, if there is a backup, then delete `chunkpruner/journal.json` and `chunkpruner/journal-plan.json`. A plan without its state file comes from a run stopped before its first rewrite, which changed nothing; it is deleted.
 
 A process killed at any point leaves each storage file either as it was or as the plan makes it, with at most a `.tmp` file next to it. A region whose three files were not all rewritten yet mixes old and new files until the journal finishes it.
 
@@ -88,7 +88,7 @@ From `region/`: `InhabitedTime`, `Status`, `xPos` and `zPos`, and the `structure
 - For each keep rule, its id, its reason and the number of chunks it kept.
 - The `.txt` file starts with a short summary, for example: "Removed 48,211 unvisited chunks (6.3 GB) from 3 dimensions. Kept 12,904 chunks: 11,870 played in, 812 near players or spawn, 222 next to played chunks." A dry run says "Would remove" and "Would keep".
 
-## 7. Commands (E1, permission level 4 by default)
+## 7. Commands (E1, permission level 4)
 
 | Command | Effect |
 |---|---|

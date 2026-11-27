@@ -4,7 +4,7 @@ Thanks for your interest. This file covers branches, commits, pull requests and 
 
 ## Language
 
-Code, identifiers, comments, commit messages, pull requests, docs and in-game text are in English. In-game text goes through translation keys (`assets/chunkpruner/lang/en_us.json` is the source).
+Code, identifiers, comments, commit messages, pull requests, docs and in-game text are in English. In-game text goes through translation keys (`assets/chunkpruner/lang/en_us.json` is the source), except the replies of `/chunkpruner`: a server sends them as plain text, since a player without the mod has no translations.
 
 ## Branches
 
@@ -45,7 +45,7 @@ A change is ready for review when:
 2. The unit tests of the shared core pass, and new logic has tests based on real fixtures.
 3. The production-JAR smoke test passes on a real dedicated server for every band and loader the change touches (see [docs/TESTING.md](docs/TESTING.md)).
 4. Formatting passes (Spotless).
-5. New user-facing text has translation keys.
+5. New user-facing text has translation keys (command replies excepted, see Language).
 6. The docs that describe the changed behaviour are updated in the same pull request.
 
 ### Commands
