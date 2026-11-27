@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -106,7 +107,7 @@ class ParallelScanFixtureTest {
     }
 
     private static Map<String, String> withoutReports(Path world) throws Exception {
-        Map<String, String> sums = new java.util.TreeMap<>(ReferenceWorld.checksums(world));
+        Map<String, String> sums = new TreeMap<>(ReferenceWorld.checksums(world));
         sums.keySet().removeIf(p -> p.startsWith("chunkpruner/reports/"));
         return sums;
     }
