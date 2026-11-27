@@ -63,14 +63,17 @@ The acceptance scenarios are listed in [SPEC.md](SPEC.md). Each one maps to at l
 
 ## In-game scenarios (production-JAR smoke test)
 
-`scripts/prod-smoke.ps1` runs the scenarios of `scripts/smoke-scenarios.ps1` on each band's real dedicated server with the release JAR, over four boots of the same world, on every pull request:
+`scripts/prod-smoke.ps1` runs the scenarios of `scripts/smoke-scenarios.ps1` on each band's real dedicated server with the release JAR, over five boots of the same world, on every pull request:
 
 | Boot | Checks |
 |---|---|
-| 1 | S9: the headless join client, a vanilla client without the mod, joins, is teleported 800 blocks away, a `fill` there succeeds, and it logs its kick. `/chunkpruner status` shows nothing scheduled. S10: with a dry run scheduled and no dry-run report, `/chunkpruner schedule prune` is refused with the message asking for a dry run, and the dry run stays scheduled. The mod wrote `config/chunkpruner.json`. |
-| 2 | E1: the scheduled dry run runs at startup, its log lines come before the server is ready, `/chunkpruner report` shows "Would remove", and `/chunkpruner schedule prune` is accepted. |
-| 3 | E1: the scheduled prune runs at startup and removes chunks, the schedule is cleared, the backup has its `restore.txt`, the report warns of no unreadable chunk, and the world then loads with no region error. S12: on 1.21.1 and 26.3 the server writes LZ4 regions (`region-file-compression=lz4`), the engine finds the game's LZ4 codec (`lz4Available` in the report) and prunes them. |
+| 1 | S9: the headless join client, a vanilla client without the mod, joins, is teleported 800 blocks away, a `fill` there succeeds, and it logs its kick. `/chunkpruner status` shows nothing scheduled. S10: with a dry run scheduled and no dry-run report, `/chunkpruner schedule prune` is refused with the message asking for a dry run, and the dry run stays scheduled. The mod wrote `config/chunkpruner.json`. The server runs with `function-permission-level=3`. |
+| 2 | E1: the scheduled dry run runs at startup, its log lines come before the server is ready, `/chunkpruner report` shows "Would remove", and `/chunkpruner schedule prune` is accepted. Permission level 4: a data pack added after boot 1 has two functions, which the game loads at level 3; the one that runs `say` loads and runs, the one that runs `chunkpruner status` does not load. With RCON (level 4) running the command, this shows the command needs level 4 exactly. |
+| 3 | E1: the scheduled prune runs at startup and removes chunks, the schedule is cleared, the backup has its `restore.txt`, the report warns of no unreadable chunk, and the world then loads with no region error. S12: on 1.21.1 and 26.3 the server writes LZ4 regions (`region-file-compression=lz4`; the compression byte of the first chunk of `r.0.0.mca` is 4 before the prune), the engine finds the game's LZ4 codec (`lz4Available` in the report) and prunes them. |
 | 4 | Auto-prune, turned on in the config, runs a dry run at startup, records it in `chunkpruner/auto-prune.json`, and `/chunkpruner status` shows when it runs next. |
+| 5 | An unfinished run that cannot be finished (`chunkpruner/journal.json` with no plan): the server stops before it loads the world, never logs that it is ready, logs the reason, and every file of the world outside `chunkpruner/` keeps its SHA-256. |
+
+The smoke test only starts dedicated servers. E1 on the integrated server of singleplayer goes through the same `loadLevel` hook (ARCHITECTURE, Hook points), but it has not run in game yet.
 
 ## Checks on Windows
 

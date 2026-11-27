@@ -1,6 +1,7 @@
 # Scenarios of the production-JAR smoke test, dot-sourced by prod-smoke.ps1 after common.ps1 and
 # vanilla-server.ps1. They use its variables ($band, $BandId, $Loader, $modProps, $serverDir,
-# $ServerPort, $RconPort, $rconPassword) and run over four boots of the same world:
+# $ServerPort, $RconPort, $rconPassword, $TimeoutMinutes, $OnWindows) and run over five boots of
+# the same world:
 #   1. S9: the headless join client, a vanilla client without the mod, joins, travels and is kicked.
 #      S10: with a dry run scheduled and no dry-run report yet, `schedule prune` is refused.
 #   2. The scheduled dry run runs at startup, before the levels load; `schedule prune` is accepted.
@@ -8,6 +9,8 @@
 #      errors, and its report gives the mod version. S12: on 1.21.1 and 26.3 the server writes LZ4
 #      regions, and the prune reads them.
 #   4. Auto-prune, turned on in the config, runs a dry run at startup and records it.
+#   5. A world whose unfinished run cannot be finished does not load, and no file of it changes.
+# Boot 2 also checks that /chunkpruner needs permission level 4: functions load at level 3 there.
 # Works on Windows PowerShell 5.1 and on PowerShell 7.
 
 function Test-SmokeLz4 {
@@ -16,8 +19,101 @@ function Test-SmokeLz4 {
 }
 
 function Get-SmokeServerProperties {
-    if (Test-SmokeLz4) { return @('region-file-compression=lz4') }
-    return @()
+    $properties = @('function-permission-level=3')
+    if (Test-SmokeLz4) { $properties += 'region-file-compression=lz4' }
+    return $properties
+}
+
+function Install-SmokePermissionPack {
+    # Two functions the game parses at function-permission-level 3 when the world loads: one with a
+    # level 2 command, one with /chunkpruner, which must not load.
+    $pack = Join-Path (Get-SmokeWorld) 'datapacks/chunkpruner-smoke'
+    $meta = switch ($band.compileTarget) {
+        '1.20.1' { '{"pack": {"pack_format": 15, "description": "Chunk Pruner smoke"}}' }
+        '1.21.1' { '{"pack": {"pack_format": 48, "description": "Chunk Pruner smoke"}}' }
+        default { '{"pack": {"min_format": 121, "max_format": 121, "description": "Chunk Pruner smoke"}}' }
+    }
+    $folder = if ($band.compileTarget -eq '1.20.1') { 'functions' } else { 'function' }
+    $functions = Join-Path $pack "data/chunkpruner_smoke/$folder"
+    New-Item -ItemType Directory -Path $functions -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $pack 'pack.mcmeta') -Value $meta -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $functions 'allowed.mcfunction') -Value 'say chunkpruner-smoke-allowed' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $functions 'owner.mcfunction') -Value 'chunkpruner status' -Encoding ascii
+}
+
+function Assert-SmokePermission {
+    Invoke-SmokeRcon -Command 'function chunkpruner_smoke:allowed' | Out-Null
+    $owner = Invoke-SmokeRcon -Command 'function chunkpruner_smoke:owner'
+    $log = Get-ServerLog
+    if ($log -notmatch 'chunkpruner-smoke-allowed') { throw 'The smoke data pack did not load: its level 2 function did not run.' }
+    if ($owner -match 'Scheduled:') { throw "A function at permission level 3 ran /chunkpruner: '$owner'." }
+    if ($log -notmatch 'Failed to load function chunkpruner_smoke:owner') { throw "The function with /chunkpruner loaded at permission level 3 (RCON answered '$owner')." }
+    Write-Host '  /chunkpruner needs permission level 4: a level 3 function with it does not load'
+}
+
+function Get-SmokeChunkCompression {
+    # The compression byte of the first chunk of r.0.0.mca in the overworld (4 is LZ4).
+    $file = Get-ChildItem -LiteralPath (Get-SmokeWorld) -Recurse -Filter 'r.0.0.mca' -File |
+        Where-Object { (Split-Path -Leaf (Split-Path -Parent $_.FullName)) -eq 'region' } |
+        Where-Object { $_.FullName -notmatch '[\\/](DIM-?1|the_nether|the_end)[\\/]' } | Select-Object -First 1
+    if (-not $file) { throw 'No overworld r.0.0.mca in the smoke world.' }
+    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+    for ($i = 0; $i -lt 1024; $i++) {
+        $sector = ([int]$bytes[$i * 4] -shl 16) -bor ([int]$bytes[$i * 4 + 1] -shl 8) -bor [int]$bytes[$i * 4 + 2]
+        if ($sector -gt 0) { return [int]$bytes[$sector * 4096 + 4] }
+    }
+    throw "$($file.FullName) has no chunk."
+}
+
+function Get-SmokeWorldHashes {
+    $world = Get-SmokeWorld
+    $hashes = @{}
+    Get-ChildItem -LiteralPath $world -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($world.Length + 1).Replace('\', '/')
+        if (-not $relative.StartsWith('chunkpruner/') -and $relative -ne 'session.lock') {
+            $hashes[$relative] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        }
+    }
+    return $hashes
+}
+
+function Invoke-SmokeRefusedBoot {
+    # A world whose journal cannot be finished must not load: the server stops before its levels.
+    param([string]$JavaExe, [string[]]$LaunchArgs)
+    $journal = Join-Path (Get-SmokeWorld) 'chunkpruner/journal.json'
+    Set-Content -LiteralPath $journal -Value '{}' -Encoding ascii
+    $before = Get-SmokeWorldHashes
+    $stdout = Join-Path $serverDir 'smoke.stdout.log'
+    $stderr = Join-Path $serverDir 'smoke.stderr.log'
+    Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $serverDir 'logs/latest.log') -Force -ErrorAction SilentlyContinue
+    Write-Host "Starting the $BandId/$Loader dedicated server with the release JAR (boot 5: unfinished run)"
+    $startArgs = @{
+        FilePath               = $JavaExe
+        ArgumentList           = $LaunchArgs
+        WorkingDirectory       = $serverDir
+        RedirectStandardOutput = $stdout
+        RedirectStandardError  = $stderr
+        PassThru               = $true
+    }
+    if ($OnWindows) { $startArgs.WindowStyle = 'Hidden' }
+    $process = Start-Process @startArgs
+    try {
+        if (-not $process.WaitForExit($TimeoutMinutes * 60000)) { throw "$BandId/$Loader kept running with an unfinished run." }
+    } finally {
+        if (-not $process.HasExited) {
+            try { $process.Kill($true) } catch { & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null }
+            $process.WaitForExit(30000) | Out-Null
+        }
+    }
+    $log = Get-ServerLog
+    if ($log -match 'Done \([^)]+\)! For help') { throw "$BandId/$Loader loaded a world with an unfinished run." }
+    if ($log -notmatch 'Chunk Pruner: the run could not be finished, so the world is not started') { throw "$BandId/$Loader stopped without the Chunk Pruner reason in its log." }
+    $after = Get-SmokeWorldHashes
+    $changed = @($before.Keys + $after.Keys | Sort-Object -Unique | Where-Object { $before[$_] -ne $after[$_] })
+    if ($changed.Count -gt 0) { throw "$BandId/$Loader changed world files while refusing to start: $($changed -join ', ')" }
+    Remove-Item -LiteralPath $journal -Force
+    Write-Host "  E1: a world with an unfinished run that cannot be finished did not load, and none of its $($before.Count) files changed"
 }
 
 function Invoke-SmokeRcon {
@@ -89,13 +185,19 @@ function Invoke-SmokeScenarios {
         Write-Host '  S10: schedule prune refused without a recent dry run, the dry run stays scheduled'
     } | Out-Null
     if (-not (Test-Path -LiteralPath (Join-Path $serverDir 'config/chunkpruner.json'))) { throw 'The mod did not write config/chunkpruner.json.' }
+    Install-SmokePermissionPack
 
     $log = Invoke-Server -JavaExe $JavaExe -LaunchArgs $LaunchArgs -Boot 'boot 2: scheduled dry run' -WhileRunning {
         Invoke-SmokeRcon -Command 'chunkpruner report' -Pattern 'Would remove [0-9,]+ unvisited chunk' | Out-Null
         Invoke-SmokeRcon -Command 'chunkpruner schedule prune' -Pattern 'A prune will run at the next server startup' | Out-Null
+        Assert-SmokePermission
     }
     Assert-SmokeLog -Log $log -Pattern 'Chunk Pruner: a dry run for the pending schedule before the world loads' -What 'E1 dry run'
     Assert-SmokeLog -Log $log -Pattern 'Chunk Pruner: Would remove [0-9,]+ unvisited chunk' -What 'E1 dry run result'
+    if (Test-SmokeLz4) {
+        $compression = Get-SmokeChunkCompression
+        if ($compression -ne 4) { throw "S12: the server wrote its regions with compression $compression, not LZ4 (4)." }
+    }
 
     $log = Invoke-Server -JavaExe $JavaExe -LaunchArgs $LaunchArgs -Boot 'boot 3: scheduled prune' -WhileRunning {
         Invoke-SmokeRcon -Command 'chunkpruner status' -Pattern 'Scheduled: nothing\.' | Out-Null
@@ -126,4 +228,6 @@ function Invoke-SmokeScenarios {
     }
     Assert-SmokeLog -Log $log -Pattern 'Chunk Pruner: a dry run for auto-prune before the world loads' -What 'E1 auto-prune'
     if (-not (Test-Path -LiteralPath (Join-Path (Get-SmokeWorld) 'chunkpruner/auto-prune.json'))) { throw 'Auto-prune did not record its run.' }
+
+    Invoke-SmokeRefusedBoot -JavaExe $JavaExe -LaunchArgs $LaunchArgs
 }
