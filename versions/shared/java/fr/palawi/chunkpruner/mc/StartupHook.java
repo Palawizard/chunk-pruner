@@ -80,16 +80,25 @@ public final class StartupHook {
                 ChunkPrunerMod.loader(),
                 ChunkPrunerMod.version(),
                 progress());
+        RunResult result;
         try {
-            RunResult result = Engine.run(settings);
-            StartupRun.finished(world, plan, Instant.now());
-            LOGGER.info("Chunk Pruner: {} Report: {}", result.summary(), result.textReport());
+            result = Engine.run(settings);
         } catch (Exception e) {
             if (Files.exists(world.resolve("chunkpruner").resolve("journal.json"))) {
                 throw new IllegalStateException(
                         "Chunk Pruner could not finish its run, so the world is not started: " + e.getMessage(), e);
             }
             LOGGER.error("Chunk Pruner: the run did not happen, nothing was changed: {}", e.getMessage());
+            return;
+        }
+        LOGGER.info("Chunk Pruner: {} Report: {}", result.summary(), result.textReport());
+        try {
+            StartupRun.finished(world, plan, Instant.now());
+        } catch (IOException e) {
+            LOGGER.error(
+                    "Chunk Pruner: the run is done, but {} could not be recorded ({}), so it runs again at the next startup.",
+                    plan.trigger().description(),
+                    e.getMessage());
         }
     }
 
