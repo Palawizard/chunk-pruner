@@ -18,6 +18,7 @@ import java.util.Optional;
  */
 public record Schedule(RunMode mode, Instant requestedAt) {
     static final String FILE = "schedule.json";
+    public static final String FILE_NAME = "chunkpruner/" + FILE;
 
     public static Path file(Path world) {
         return world.resolve("chunkpruner").resolve(FILE);

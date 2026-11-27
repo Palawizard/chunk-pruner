@@ -141,6 +141,44 @@ class ServerCommandsTest {
                         .get(0));
     }
 
+    /** A schedule file that cannot be read can still be replaced or cancelled from the game. */
+    @Test
+    void aDamagedScheduleCanBeReplacedOrCancelled() throws Exception {
+        Files.createDirectories(Schedule.file(world).getParent());
+        Files.writeString(Schedule.file(world), "{\"mode\": \"later\"}");
+        String status = ServerCommands.status(world, Config.defaults(), DRY_RUN_AT)
+                .lines()
+                .get(0);
+        assertTrue(status.startsWith("Scheduled: ") && status.contains("schedule.json cannot be read"), status);
+        assertTrue(status.endsWith("until /chunkpruner cancel removes it."), status);
+
+        Reply cancel = ServerCommands.cancel(world);
+        assertTrue(cancel.success());
+        assertEquals(
+                "chunkpruner/schedule.json could not be read and is removed: nothing is scheduled now.",
+                cancel.lines().get(0));
+        assertFalse(Files.exists(Schedule.file(world)));
+
+        Files.writeString(Schedule.file(world), "not json");
+        Reply schedule = ServerCommands.schedule(world, RunMode.DRY_RUN, DRY_RUN_AT);
+        assertTrue(
+                schedule.lines().get(0).endsWith("It replaces chunkpruner/schedule.json, which could not be read."),
+                schedule.lines().toString());
+        assertEquals(
+                new Schedule(RunMode.DRY_RUN, DRY_RUN_AT), Schedule.read(world).orElseThrow());
+    }
+
+    @Test
+    void statusSaysWhenTheAutoPruneRecordCannotBeRead() throws Exception {
+        Files.createDirectories(world.resolve("chunkpruner"));
+        Files.writeString(world.resolve("chunkpruner/auto-prune.json"), "{}");
+        Config auto = Config.fromJson("{\"autoPrune\": {\"enabled\": true, \"intervalDays\": 3}}");
+        String line = ServerCommands.status(world, auto, DRY_RUN_AT).lines().get(2);
+        assertTrue(line.startsWith("Auto-prune: dry-run every 3 days, but "), line);
+        assertTrue(
+                line.contains("auto-prune.json cannot be read") && line.endsWith("until that file is deleted."), line);
+    }
+
     /** A damaged report does not count as the dry run a prune needs. */
     @Test
     void aReportThatCannotBeReadIsLeftOut() throws Exception {

@@ -36,10 +36,14 @@ public final class ServerCommands {
     }
 
     public static Reply schedule(Path world, RunMode mode, Instant now) throws IOException {
-        Optional<Schedule> previous = Schedule.read(world);
-        String replaced = previous.map(
-                        s -> " It replaces the pending " + s.mode().id() + ".")
-                .orElse("");
+        String replaced;
+        try {
+            replaced = Schedule.read(world)
+                    .map(s -> " It replaces the pending " + s.mode().id() + ".")
+                    .orElse("");
+        } catch (IOException e) {
+            replaced = " It replaces " + Schedule.FILE_NAME + ", which could not be read.";
+        }
         if (mode == RunMode.PRUNE) {
             Optional<Run> dryRun = PastRuns.latestDryRun(world);
             if (dryRun.isEmpty() || !dryRun.get().startedAt().isAfter(now.minus(DRY_RUN_MAX_AGE))) {
@@ -60,7 +64,13 @@ public final class ServerCommands {
     }
 
     public static Reply cancel(Path world) throws IOException {
-        Optional<Schedule> previous = Schedule.read(world);
+        Optional<Schedule> previous;
+        try {
+            previous = Schedule.read(world);
+        } catch (IOException e) {
+            Schedule.clear(world);
+            return Reply.ok(Schedule.FILE_NAME + " could not be read and is removed: nothing is scheduled now.");
+        }
         if (previous.isEmpty()) {
             return Reply.ok("Nothing is scheduled.");
         }
@@ -73,20 +83,30 @@ public final class ServerCommands {
         if (StartupRun.hasUnfinishedRun(world)) {
             lines.add("An unfinished run will be finished at the next server startup.");
         }
-        Optional<Schedule> schedule = Schedule.read(world);
-        lines.add(schedule.map(s -> "Scheduled: a " + s.mode().id() + " at the next server startup (asked "
-                        + s.requestedAt() + ").")
-                .orElse("Scheduled: nothing."));
+        try {
+            lines.add(Schedule.read(world)
+                    .map(s -> "Scheduled: a " + s.mode().id() + " at the next server startup (asked " + s.requestedAt()
+                            + ").")
+                    .orElse("Scheduled: nothing."));
+        } catch (IOException e) {
+            lines.add("Scheduled: " + e.getMessage() + ". Nothing runs at startup until /chunkpruner cancel"
+                    + " removes it.");
+        }
         Optional<Run> last = PastRuns.latest(world);
         lines.add(last.map(r -> "Last run: " + r.runId() + ", " + r.mode() + " at " + r.context() + ". " + r.summary())
                 .orElse("Last run: none."));
         if (!config.autoPruneEnabled()) {
             lines.add("Auto-prune: off.");
         } else {
-            Instant next = StartupRun.nextAutoPrune(world, config);
-            String when = now.isBefore(next) ? "at the first startup after " + next : "at the next startup";
-            lines.add("Auto-prune: " + config.autoPruneMode() + " every " + config.autoPruneIntervalDays()
-                    + " days, next " + when + ".");
+            String every =
+                    "Auto-prune: " + config.autoPruneMode() + " every " + config.autoPruneIntervalDays() + " days";
+            try {
+                Instant next = StartupRun.nextAutoPrune(world, config);
+                String when = now.isBefore(next) ? "at the first startup after " + next : "at the next startup";
+                lines.add(every + ", next " + when + ".");
+            } catch (IOException e) {
+                lines.add(every + ", but " + e.getMessage() + ". It does not run until that file is deleted.");
+            }
         }
         return new Reply(true, lines);
     }
