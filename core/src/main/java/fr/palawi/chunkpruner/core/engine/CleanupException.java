@@ -13,7 +13,7 @@ public final class CleanupException extends IOException {
     CleanupException(RunResult result, IOException cause) {
         super(
                 "the run is done (" + result.summary() + "), but its last step failed: " + cause.getMessage()
-                        + " Report: " + result.textReport(),
+                        + ". Report: " + result.textReport(),
                 cause);
         this.result = result;
     }

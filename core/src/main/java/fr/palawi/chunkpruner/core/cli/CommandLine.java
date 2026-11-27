@@ -116,7 +116,8 @@ public final class CommandLine {
             err.println(e.getMessage());
             return EXIT_ERROR;
         } catch (CleanupException e) {
-            err.println("The " + e.getMessage());
+            String message = e.getMessage();
+            err.println(Character.toUpperCase(message.charAt(0)) + message.substring(1));
             return EXIT_ERROR;
         } catch (IOException | RuntimeException e) {
             err.println("The run failed: " + e.getMessage());

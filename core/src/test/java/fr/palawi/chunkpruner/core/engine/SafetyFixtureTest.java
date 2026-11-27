@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import fr.palawi.chunkpruner.core.cli.CommandLine;
 import fr.palawi.chunkpruner.core.config.Config;
@@ -22,9 +23,11 @@ import java.io.PrintStream;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -197,5 +200,30 @@ class SafetyFixtureTest {
         assertEquals(
                 CommandLine.EXIT_ERROR, cli("--world", temp.resolve("nothing").toString(), "--dry-run"));
         assertTrue(err.toString(StandardCharsets.UTF_8).contains("no world folder"));
+    }
+
+    /** The prune happened even though an old backup could not be deleted: the message says so. */
+    @Test
+    void commandLineSaysThePruneIsDoneWhenTheRetentionFails() throws Exception {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        Path world = world();
+        Path old = world.resolve("chunkpruner/backups/20200101-000000-prune");
+        Path locked = old.resolve("region");
+        Files.createDirectories(locked);
+        Files.writeString(old.resolve("restore.txt"), "old backup");
+        Files.writeString(locked.resolve("r.0.0.mca"), "old copy");
+        Path config = temp.resolve("config.json");
+        Files.writeString(config, "{\"backupRetention\": 1}");
+        Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("r-xr-xr-x"));
+        try {
+            assumeTrue(!Files.isWritable(locked), "the tests run with rights that ignore folder permissions");
+            assertEquals(CommandLine.EXIT_ERROR, cli("--world", world.toString(), "--config", config.toString()));
+            String message = err.toString(StandardCharsets.UTF_8);
+            assertTrue(message.startsWith("The run is done (Removed "), message);
+            assertTrue(message.contains("but its last step failed: ") && message.contains(". Report: "), message);
+            assertFalse(Files.exists(world.resolve("chunkpruner/journal.json")));
+        } finally {
+            Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x"));
+        }
     }
 }
