@@ -61,6 +61,7 @@ The scripts run on PowerShell 7 (`pwsh`, Windows, Linux or macOS) and on Windows
 ./scripts/check-powershell-compat.ps1                            the scripts parse on Windows PowerShell 5.1
 ./scripts/make-fixture-world.ps1 -Minecraft 1.21.1               make a fixture world on the vanilla server
 ./scripts/check-pruned-world.ps1 -Minecraft 1.21.1 -World <path> open a pruned copy of a world on the vanilla server
+./scripts/make-benchmark-world.ps1 -Minecraft 1.21.1 -Side 20    make the large normal-terrain world of the scan benchmark
 ```
 
 Fixture worlds and the tests built on them are described in [docs/TESTING.md](docs/TESTING.md). To run the core tests on normal-terrain worlds made with `make-fixture-world.ps1 -LevelType normal -OutputRoot build/generated-worlds`, pass `-PgeneratedWorlds=../build/generated-worlds` to `./gradlew test` in `core/`.

@@ -37,7 +37,7 @@ final class ParallelReads implements AutoCloseable {
         this.window = 2 * threads;
     }
 
-    /** The default: every core, at most 8 (ARCHITECTURE, Performance and measurements). */
+    /** The default: every hardware thread, at most 8 (ARCHITECTURE, Concurrency and safety). */
     static int defaultThreads() {
         return Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors()));
     }
