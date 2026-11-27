@@ -156,7 +156,17 @@ The server part holds the startup hook and the commands, and the client part hol
 | superflat 1.20.1 (committed) | 8 | 3,912 | 157 ms | 51 | 25,000 |
 | superflat 26.3 (committed) | 8 | 3,691 | 135 ms | 59 | 27,300 |
 
-  The region files of these worlds are not full (400 to 500 chunks each). On normal terrain the time splits about evenly between zlib inflation and the NBT walk (about 200 ms each for the 57 MB the 1.21.1 world decompresses to); the structures and the entities add under 10 percent. A full region of normal terrain, 1,024 chunks, takes about 0.12 s, so about 8 full regions per second: the target of about 50 regions per second holds for superflat or sparse regions, not for full normal-terrain ones with every payload decoded. Reading regions in parallel is listed in the plan as later work.
+  The region files of these worlds are not full (400 to 500 chunks each). On normal terrain the time splits about evenly between zlib inflation and the NBT walk (about 200 ms each for the 57 MB the 1.21.1 world decompresses to); the structures and the entities add under 10 percent. A full region of normal terrain, 1,024 chunks, takes about 0.12 s on one thread, so about 8 full regions per second.
+- Parallel scan, measured on 2026-11-27 with the same `ScanBenchmark` and thread counts (`ScanBenchmark 3 1,2,4,8 <world>`) on a large normal-terrain world made by the game: `scripts/make-benchmark-world.ps1 -Minecraft 1.21.1 -Side 20` (vanilla 1.21.1 dedicated server, seed 20261126, no player; the 20 by 20 square of regions around region (0, 0) force-loaded until every chunk is full, 4 regions at a time). The world has 484 region files: the 400 full regions of the square, checked in their headers, and 84 partial ones at its edge, 443,556 chunks in all, 3.6 GB on disk. Laptop with an Intel Core i7-13650HX (20 threads) and 30 GB of RAM, Arch Linux, OpenJDK 21.0.13, nothing else running; the world fits in the page cache, so the numbers measure the engine, not the disk. Means of three dry runs after one warm-up run:
+
+| Scan threads | Mean dry run | Region files per second | Chunks per second | Speed-up |
+|---|---|---|---|---|
+| 1 | 54.5 s | 8.9 | 8,100 | 1.0 |
+| 2 | 27.8 s | 17.4 | 16,000 | 2.0 |
+| 4 | 14.9 s | 32.5 | 29,800 | 3.7 |
+| 8 (the default on this machine) | 9.8 s | 49.4 | 45,300 | 5.6 |
+
+  With K5 off the times are 1 to 3 percent shorter. Scan target, corrected: about 8 full normal-terrain regions per second per scan thread, up to 4 threads, and about 50 per second with the default 8 threads on a machine with 8 cores or more. The former target of about 50 regions per second held, on one thread, only for superflat or sparse regions. A server world of 2,000 full regions would take about 40 s at startup on this machine with 8 threads, and about 4 min on one core (estimates from this table, not measured).
 - What K4 and K5 keep, measured by `KeepShareMeasurementTest` with the test reader on the normal-terrain worlds made in CI (the job prints the numbers): the share of the overworld chunks that K1 and K8 alone would prune that each rule keeps. Local runs of 2026-11-26 on a laptop, same script and seed as CI, with K5 keeping what world generation placed (ADR-CP-009):
 
 | World | Prunable by K1 and K8 | Kept by K4 | Kept by K5 |
