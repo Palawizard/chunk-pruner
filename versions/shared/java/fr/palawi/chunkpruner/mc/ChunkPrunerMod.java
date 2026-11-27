@@ -3,8 +3,6 @@ package fr.palawi.chunkpruner.mc;
 import fr.palawi.chunkpruner.core.config.Config;
 import fr.palawi.chunkpruner.core.config.JsonException;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -40,11 +38,6 @@ public final class ChunkPrunerMod {
 
     /** The config file, written with the defaults when it does not exist yet (ADR-005). */
     static Config config() throws IOException, JsonException {
-        Path file = configFile();
-        if (!Files.exists(file)) {
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, Config.defaults().toJson(), StandardCharsets.UTF_8);
-        }
-        return Config.load(file);
+        return Config.loadOrWriteDefaults(configFile());
     }
 }

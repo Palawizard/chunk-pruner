@@ -6,9 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import fr.palawi.chunkpruner.core.world.DimensionId;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -89,5 +92,18 @@ class ConfigTest {
             })
     void rejectsWrongValues(String text) {
         assertThrows(JsonException.class, () -> Config.fromJson(text));
+    }
+
+    @Test
+    void aMissingConfigFileIsWrittenWithTheDefaultsAndAnExistingOneIsKept(@TempDir Path temp) throws Exception {
+        Path file = temp.resolve("config/chunkpruner.json");
+        assertEquals(
+                Config.defaults().toJson(), Config.loadOrWriteDefaults(file).toJson());
+        assertEquals(Config.defaults().toJson(), Files.readString(file));
+        assertEquals(List.of(file), Files.list(file.getParent()).toList(), "no temporary file is left");
+
+        Files.writeString(file, "{\"backupRetention\": 5}");
+        assertEquals(5, Config.loadOrWriteDefaults(file).backupRetention());
+        assertEquals("{\"backupRetention\": 5}", Files.readString(file));
     }
 }
