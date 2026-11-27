@@ -3,6 +3,7 @@ param(
     [ValidateSet('1.20.1', '1.21.1', '26.3')]
     [string]$Minecraft = '1.21.1',
     # Side of the square of full regions to generate, centred on region (0, 0).
+    [ValidateRange(1, 100)]
     [int]$Side = 20,
     [string]$OutputRoot,
     [long]$Seed = 20261126,
@@ -10,6 +11,7 @@ param(
     [int]$RconPort = 25653,
     [string]$Heap = '4G',
     # Regions force-loaded at the same time.
+    [ValidateRange(1, 64)]
     [int]$Batch = 4
 )
 
@@ -20,8 +22,9 @@ param(
 # server unloads and saves them. Each of the $Side by $Side regions around region (0, 0) ends with
 # its 1024 chunks, and the generation around them leaves partly generated regions at the edge. The
 # world is <OutputRoot>/server/world and is never committed; a run started again keeps it and
-# skips the regions that are already full. Written for Windows PowerShell 5.1 and PowerShell 7; run so
-# far with PowerShell 7 on Linux.
+# skips the regions of the batches it finished (<OutputRoot>/done-regions.txt). Once the server has
+# stopped, the script checks that every region of the square holds its 1024 chunks. Written for
+# Windows PowerShell 5.1 and PowerShell 7; run so far with PowerShell 7 on Linux.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 . (Join-Path $PSScriptRoot 'vanilla-server.ps1')
@@ -42,7 +45,7 @@ Write-VanillaServerConfig -ServerDir $serverDir -Properties @(
 Remove-Item -LiteralPath (Join-Path $serverDir 'logs/latest.log') -ErrorAction SilentlyContinue
 
 function Test-RegionFull([int]$Rx, [int]$Rz) {
-    # The region file on disk already holds its 1024 chunks (an earlier run generated it).
+    # The region file on disk holds its 1024 chunks.
     $file = Join-Path $serverDir "world/region/r.$Rx.$Rz.mca"
     if (-not (Test-Path -LiteralPath $file)) { return $false }
     $stream = [System.IO.File]::OpenRead($file)
@@ -74,10 +77,13 @@ function Test-RegionLoaded([int]$Rx, [int]$Rz) {
 }
 
 $half = [int][Math]::Floor($Side / 2)
-# The full regions are found before the server starts: it keeps region files open, which Windows
-# does not let another process read.
+# A region is skipped only when a finished batch recorded it: a region file can hold its 1024
+# entries while the chunks at its edge are not fully generated yet.
+$doneFile = Join-Path $OutputRoot 'done-regions.txt'
+$recorded = @{}
+if (Test-Path -LiteralPath $doneFile) { Get-Content -LiteralPath $doneFile | ForEach-Object { $recorded[$_.Trim()] = $true } }
 $all = @(for ($rz = -$half; $rz -lt $Side - $half; $rz++) {
-    for ($rx = -$half; $rx -lt $Side - $half; $rx++) { if (-not (Test-RegionFull $rx $rz)) { , @($rx, $rz) } }
+    for ($rx = -$half; $rx -lt $Side - $half; $rx++) { if (-not $recorded.ContainsKey("$rx $rz")) { , @($rx, $rz) } }
 })
 Write-Host "$($all.Count) of $($Side * $Side) regions to generate"
 $startArgs = @{
@@ -102,7 +108,8 @@ try {
                 $x = $r[0] * 512 + $q[0]
                 $z = $r[1] * 512 + $q[1]
                 $a = Send-Quiet "forceload add $x $z $($x + 255) $($z + 255)"
-                if ($a -notmatch 'Marked') { throw "forceload add answered '$a'." }
+                # A command sent again after a lost answer finds its chunks already marked.
+                if ($a -cnotmatch '^(Marked|No chunks were marked)') { throw "forceload add answered '$a'." }
             }
         }
         $deadline = (Get-Date).AddMinutes(20)
@@ -113,6 +120,7 @@ try {
             }
         }
         Send-Quiet 'forceload remove all' | Out-Null
+        Add-Content -LiteralPath $doneFile -Value @($group | ForEach-Object { "$($_[0]) $($_[1])" }) -Encoding ascii
         $done += $group.Count
         $elapsed = ((Get-Date) - $started).TotalSeconds
         Write-Host ("{0}/{1} regions done ({2:N0} s)" -f $done, $all.Count, $elapsed)
@@ -123,5 +131,10 @@ try {
 } finally {
     Stop-ProcessTree $server
 }
+# The server has stopped, so its region files can be read on every system.
+$missing = @(for ($rz = -$half; $rz -lt $Side - $half; $rz++) {
+    for ($rx = -$half; $rx -lt $Side - $half; $rx++) { if (-not (Test-RegionFull $rx $rz)) { "r.$rx.$rz.mca" } }
+})
+if ($missing.Count -gt 0) { throw "These regions do not hold their 1024 chunks: $($missing -join ', ')" }
 $minutes = ((Get-Date) - $started).TotalMinutes
 Write-Host ("Generated {0} regions in {1:N1} min; all {2} regions of the square are full. World: {3}" -f $all.Count, $minutes, ($Side * $Side), (Join-Path $serverDir 'world')) -ForegroundColor Green
