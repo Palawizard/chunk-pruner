@@ -19,6 +19,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,8 +65,8 @@ class ServerCommandsTest {
     @Test
     void aPruneIsScheduledOnlyAfterADryRunOfTheLastSevenDays() throws Exception {
         dryRunAt(DRY_RUN_AT);
-        Instant late = DRY_RUN_AT.plus(ServerCommands.DRY_RUN_MAX_AGE).plusSeconds(1);
-        assertFalse(ServerCommands.schedule(world, RunMode.PRUNE, late).success());
+        Instant sevenDays = DRY_RUN_AT.plus(ServerCommands.DRY_RUN_MAX_AGE);
+        assertFalse(ServerCommands.schedule(world, RunMode.PRUNE, sevenDays).success());
         assertTrue(Schedule.read(world).isEmpty());
 
         Instant inTime = DRY_RUN_AT.plus(Duration.ofDays(6));
@@ -96,7 +97,7 @@ class ServerCommandsTest {
     @Test
     void statusAndReportDescribeTheWorld() throws Exception {
         Reply empty = ServerCommands.status(world, Config.defaults(), DRY_RUN_AT);
-        assertEquals(java.util.List.of("Scheduled: nothing.", "Last run: none.", "Auto-prune: off."), empty.lines());
+        assertEquals(List.of("Scheduled: nothing.", "Last run: none.", "Auto-prune: off."), empty.lines());
         assertFalse(ServerCommands.report(world, null).success());
 
         dryRunAt(DRY_RUN_AT);
@@ -127,6 +128,37 @@ class ServerCommandsTest {
         assertEquals(
                 "No report with the id nope.",
                 ServerCommands.report(world, "nope").lines().get(0));
+    }
+
+    @Test
+    void statusSaysAnUnfinishedRunWillBeFinished() throws Exception {
+        Files.createDirectories(world.resolve("chunkpruner"));
+        Files.writeString(world.resolve("chunkpruner/journal.json"), "{}");
+        assertEquals(
+                "An unfinished run will be finished at the next server startup.",
+                ServerCommands.status(world, Config.defaults(), DRY_RUN_AT)
+                        .lines()
+                        .get(0));
+    }
+
+    /** A damaged report does not count as the dry run a prune needs. */
+    @Test
+    void aReportThatCannotBeReadIsLeftOut() throws Exception {
+        dryRunAt(DRY_RUN_AT);
+        Path reports = world.resolve("chunkpruner/reports");
+        try (var files = Files.list(reports)) {
+            for (Path json : files.filter(f -> f.toString().endsWith(".json")).toList()) {
+                Files.writeString(json, "{\"runId\": ");
+            }
+        }
+        Files.writeString(reports.resolve("notes.json"), "[]");
+        assertEquals(
+                "Last run: none.",
+                ServerCommands.status(world, Config.defaults(), DRY_RUN_AT)
+                        .lines()
+                        .get(1));
+        assertFalse(ServerCommands.schedule(world, RunMode.PRUNE, DRY_RUN_AT.plusSeconds(60))
+                .success());
     }
 
     private void dryRunAt(Instant at) throws Exception {

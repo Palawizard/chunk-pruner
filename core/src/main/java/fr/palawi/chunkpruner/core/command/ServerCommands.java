@@ -7,7 +7,6 @@ import fr.palawi.chunkpruner.core.engine.RunMode;
 import fr.palawi.chunkpruner.core.engine.Schedule;
 import fr.palawi.chunkpruner.core.engine.StartupRun;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,7 +20,7 @@ import java.util.Optional;
  * only happens at the next server startup.
  */
 public final class ServerCommands {
-    /** A prune is scheduled only after a dry run of the same world that is this recent. */
+    /** A prune is scheduled only after a dry run of the same world that is less than this old. */
     public static final Duration DRY_RUN_MAX_AGE = Duration.ofDays(7);
 
     private ServerCommands() {}
@@ -43,7 +42,7 @@ public final class ServerCommands {
                 .orElse("");
         if (mode == RunMode.PRUNE) {
             Optional<Run> dryRun = PastRuns.latestDryRun(world);
-            if (dryRun.isEmpty() || dryRun.get().startedAt().isBefore(now.minus(DRY_RUN_MAX_AGE))) {
+            if (dryRun.isEmpty() || !dryRun.get().startedAt().isAfter(now.minus(DRY_RUN_MAX_AGE))) {
                 return Reply.refused(
                         "Refused: a prune needs a dry run of this world from the last " + DRY_RUN_MAX_AGE.toDays()
                                 + " days.",
@@ -71,7 +70,7 @@ public final class ServerCommands {
 
     public static Reply status(Path world, Config config, Instant now) throws IOException {
         List<String> lines = new ArrayList<>();
-        if (Files.isRegularFile(world.resolve("chunkpruner").resolve("journal.json"))) {
+        if (StartupRun.hasUnfinishedRun(world)) {
             lines.add("An unfinished run will be finished at the next server startup.");
         }
         Optional<Schedule> schedule = Schedule.read(world);
