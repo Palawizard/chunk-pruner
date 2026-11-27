@@ -181,6 +181,20 @@ class StartupRunTest {
         assertInstanceOf(NothingDue.class, atStartup(Config.fromJson(AUTO_DRY_RUN)));
     }
 
+    /** The prune is done; only its auto-prune record failed, and the problem says what runs again. */
+    @Test
+    void aFailedAutoPruneRecordSaysThatAutoPruneRunsAgain() throws Exception {
+        Path record = StartupRun.autoPruneFile(world);
+        Files.createDirectories(record.resolve("in-the-way"));
+        new Schedule(RunMode.PRUNE, NOW).write(world);
+        Done done = assertInstanceOf(Done.class, atStartup(Config.fromJson(AUTO_DRY_RUN)));
+        assertEquals(1, done.problems().size(), done.problems().toString());
+        String problem = done.problems().get(0);
+        assertTrue(problem.startsWith("this run could not be recorded as the last auto-prune run ("), problem);
+        assertTrue(problem.endsWith("so auto-prune runs at the next startup"), problem);
+        assertTrue(Schedule.read(world).isEmpty(), "the prune cleared its schedule");
+    }
+
     /** A backup the retention cannot delete: the prune is done and the log says so. */
     @Test
     void aFailedRetentionAfterThePruneIsAProblemOfADoneRun() throws Exception {

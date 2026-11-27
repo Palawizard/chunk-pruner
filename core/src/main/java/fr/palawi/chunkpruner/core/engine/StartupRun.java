@@ -128,12 +128,7 @@ public final class StartupRun {
             }
             return new NotRun("the run did not happen, nothing was changed: " + e.getMessage(), e);
         }
-        try {
-            finished(world, config, plan, clock.instant());
-        } catch (IOException e) {
-            problems.add(plan.trigger().description() + " could not be recorded (" + e.getMessage()
-                    + "), so it runs again at the next startup");
-        }
+        problems.addAll(finished(world, config, plan, clock.instant()));
         return new Done(plan, result, List.copyOf(problems));
     }
 
@@ -159,15 +154,28 @@ public final class StartupRun {
     /**
      * After a run that finished: a scheduled dry run is cleared (a prune clears it in the engine),
      * and a run that rewrote files, or auto-prune itself, is recorded as the last auto-prune run.
+     * Returns what failed, each saying what runs again at the next startup.
      */
-    static void finished(Path world, Config config, Plan plan, Instant now) throws IOException {
+    static List<String> finished(Path world, Config config, Plan plan, Instant now) {
+        List<String> problems = new ArrayList<>();
         if (plan.trigger() == Trigger.SCHEDULE) {
-            Schedule.clear(world);
+            try {
+                Schedule.clear(world);
+            } catch (IOException e) {
+                problems.add("the schedule could not be cleared (" + e.getMessage()
+                        + "), so it runs again at the next startup");
+            }
         }
         boolean rewrote = plan.trigger() == Trigger.JOURNAL || plan.mode() == RunMode.PRUNE;
         if (plan.trigger() == Trigger.AUTO_PRUNE || rewrote && config.autoPruneEnabled()) {
-            AtomicFiles.writeString(autoPruneFile(world), Json.write(Map.of("lastRun", now.toString())));
+            try {
+                AtomicFiles.writeString(autoPruneFile(world), Json.write(Map.of("lastRun", now.toString())));
+            } catch (IOException e) {
+                problems.add("this run could not be recorded as the last auto-prune run (" + e.getMessage()
+                        + "), so auto-prune runs at the next startup");
+            }
         }
+        return problems;
     }
 
     /** When auto-prune last ran at startup, if it ever did. */
