@@ -18,7 +18,7 @@ versions/    One standalone project per band and loader: startup hook (E1), comm
              world and dimension paths, and the optional client screen (E2).
 testmod/     Test tools that never ship: the headless join client (join-bot/).
 scripts/     Build of every band, production-JAR smoke test, release artifact checks,
-             fixture worlds on vanilla servers.
+             fixture worlds on vanilla servers, the played world check with the real client.
 ```
 
 The engine is plain Java, so it behaves the same on every band, can be tested against fixture worlds, and runs from the command line. Only the startup hook, the commands and the singleplayer screen touch Minecraft or loader APIs.
