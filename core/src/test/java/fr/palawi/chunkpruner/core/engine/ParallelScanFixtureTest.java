@@ -9,6 +9,7 @@ import fr.palawi.chunkpruner.core.config.Config;
 import fr.palawi.chunkpruner.core.fixture.FixtureWorlds;
 import fr.palawi.chunkpruner.core.fixture.FixtureWorlds.Fixture;
 import fr.palawi.chunkpruner.core.fixture.ReferenceWorld;
+import fr.palawi.chunkpruner.core.report.Warning;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,7 +36,8 @@ class ParallelScanFixtureTest {
     Path temp;
 
     static Stream<Fixture> worlds() throws Exception {
-        return FixtureWorlds.all().stream();
+        Fixture lz4 = new Fixture(FixtureWorlds.LZ4, FixtureWorlds.committed(FixtureWorlds.LZ4), true);
+        return Stream.concat(FixtureWorlds.all().stream(), Stream.of(lz4));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -60,10 +62,13 @@ class ParallelScanFixtureTest {
             file.seek(middle);
             file.write(new byte[4096]);
         }
-        compare(damaged, "damaged");
+        String warnings = compare(damaged, "damaged").get("warnings").toString();
+        assertTrue(warnings.contains(Warning.UNREADABLE_REGION), "the cut header made a region unreadable");
+        assertTrue(warnings.contains(Warning.UNREADABLE_CHUNK), "the garbage made chunks unreadable");
     }
 
-    private void compare(Path source, String label) throws Exception {
+    /** Returns the dry run report with one thread. */
+    private Map<String, Object> compare(Path source, String label) throws Exception {
         Map<String, Object> dryOne = dryRun(source, label + "-dry-1", 1);
         Map<String, Object> dryMany = dryRun(source, label + "-dry-4", 4);
         assertEquals(dryOne, dryMany, "dry run report with 1 and 4 threads");
@@ -75,6 +80,7 @@ class ParallelScanFixtureTest {
                 comparable(readJson(onlyReport(one))),
                 comparable(readJson(onlyReport(many))),
                 "prune report with 1 and 4 threads");
+        return dryOne;
     }
 
     private Map<String, Object> dryRun(Path source, String name, int threads) throws Exception {
