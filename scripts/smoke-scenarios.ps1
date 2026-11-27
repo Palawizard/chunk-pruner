@@ -52,7 +52,7 @@ function Assert-SmokePermission {
 }
 
 function Get-SmokeChunkCompression {
-    # The compression byte of the first chunk of the first overworld region file (4 is LZ4).
+    # The compression byte of the first chunk found in the overworld region files (4 is LZ4).
     $world = Get-SmokeWorld
     $folder = if (Test-Path -LiteralPath (Join-Path $world 'dimensions')) { 'dimensions/minecraft/overworld/region' } else { 'region' }
     $files = Get-ChildItem -LiteralPath (Join-Path $world $folder) -Filter '*.mca' -File | Sort-Object Name
@@ -151,10 +151,11 @@ function Assert-SmokeLog {
 function Invoke-SmokeJoin {
     # S9: a client without the mod joins, moves far away (the server generates a second area there)
     # and leaves when kicked.
+    param([string]$JavaExe)
     $settings = Get-FixtureVersion $band.compileTarget
-    Install-JoinBotClasses -JavaExe $javaExe -Destination (Join-Path $serverDir 'join-bot')
+    Install-JoinBotClasses -JavaExe $JavaExe -Destination (Join-Path $serverDir 'join-bot')
     $offset = (Get-ServerLogText $serverDir).Length
-    $bot = Start-JoinBotProcess -JavaExe $javaExe -ClassDir 'join-bot' -WorkDir $serverDir -Port $ServerPort `
+    $bot = Start-JoinBotProcess -JavaExe $JavaExe -ClassDir 'join-bot' -WorkDir $serverDir -Port $ServerPort `
         -Protocol $settings.Protocol -Name 'S9Bot' -StaySeconds 600 -ViewDistance 4
     try {
         Wait-ServerLog -ServerDir $serverDir -Process $script:serverProcess -Pattern 'S9Bot\[[^\]]*\] logged in' -Seconds 120 -Offset $offset
@@ -177,10 +178,9 @@ function Invoke-SmokeJoin {
 
 function Invoke-SmokeScenarios {
     param([string]$JavaExe, [string[]]$LaunchArgs)
-    $javaExe = $JavaExe
 
     Invoke-Server -JavaExe $JavaExe -LaunchArgs $LaunchArgs -Boot 'boot 1: S9 and S10' -WhileRunning {
-        Invoke-SmokeJoin
+        Invoke-SmokeJoin -JavaExe $JavaExe
         Invoke-SmokeRcon -Command 'chunkpruner status' -Pattern 'Scheduled: nothing\.' | Out-Null
         Invoke-SmokeRcon -Command 'chunkpruner schedule dry-run' -Pattern 'A dry run will run at the next server startup' | Out-Null
         Invoke-SmokeRcon -Command 'chunkpruner schedule prune' -Pattern 'Refused: a prune needs a dry run of this world' | Out-Null
