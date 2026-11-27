@@ -257,7 +257,7 @@ public final class JoinBot {
                     return EXIT_STAYED;
                 }
                 if (positionKnown && now - lastMoveSent >= 1000) {
-                    sendPosition();
+                    reportPosition();
                 }
                 if (!joined && now >= deadline) {
                     log("timeout: not joined after " + timeoutSeconds + " s (phase " + phase + ")");
@@ -397,6 +397,8 @@ public final class JoinBot {
         } else if (id == profile.id("playStartConfiguration")) {
             send(new Buf(profile.id("playConfigurationAcknowledgedOut")));
             phase = Phase.CONFIGURATION;
+            // Play packets are not allowed in the configuration phase; the next teleport resumes them.
+            positionKnown = false;
         }
         return null;
     }
@@ -446,7 +448,21 @@ public final class JoinBot {
             loadedSent = true;
         }
         positionKnown = true;
-        sendPosition();
+        reportPosition();
+    }
+
+    /**
+     * Sends the position. The server may have closed the connection right after sending its
+     * disconnect packet: a failed write then stops the reports and the client reads on, so that
+     * packet and its reason are not lost.
+     */
+    private void reportPosition() {
+        try {
+            sendPosition();
+        } catch (IOException e) {
+            log("position report failed (" + e.getMessage() + "), reading on");
+            positionKnown = false;
+        }
     }
 
     /**
@@ -456,7 +472,7 @@ public final class JoinBot {
      * when it stands still.
      */
     private void sendPosition() throws IOException {
-        // The last byte is the on-ground flag (bit 0) on every supported version.
+        // The last byte is 0, not on ground: a boolean on 1.20.1 and 1.21.1, a flag byte on 26.3.
         send(new Buf(profile.id("playMovePlayerPosRotOut"))
                 .f64(x)
                 .f64(y)

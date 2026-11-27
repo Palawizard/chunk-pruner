@@ -76,13 +76,14 @@ class SafetyFixtureTest {
 
             assertEquals(CommandLine.EXIT_REFUSED, cli("--world", world.toString(), "--dry-run"));
             assertTrue(err.toString(StandardCharsets.UTF_8).contains("is open in another program"), err.toString());
-            assertEquals(before, ReferenceWorld.checksums(world), "nothing was written, not even a report");
         } finally {
             holder.getOutputStream().close();
             if (!holder.waitFor(30, TimeUnit.SECONDS)) {
-                holder.destroyForcibly();
+                holder.destroyForcibly().waitFor();
             }
         }
+        // Windows locks are mandatory: session.lock cannot be read until the holder lets it go.
+        assertEquals(before, ReferenceWorld.checksums(world), "nothing was written, not even a report");
         assertEquals(CommandLine.EXIT_OK, cli("--world", world.toString(), "--dry-run"), err.toString());
     }
 
