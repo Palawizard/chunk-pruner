@@ -87,7 +87,20 @@ class ParallelReadsTest {
                         most[0] = Math.max(most[0], read.get() - handed.incrementAndGet());
                     });
         }
-        assertTrue(most[0] <= 6, "results waiting at once: " + most[0]);
+        assertTrue(most[0] <= 5, "results waiting at once: " + most[0]);
+    }
+
+    @Test
+    void noScanThreadOutlivesTheReads() {
+        try (ParallelReads reads = new ParallelReads(4)) {
+            reads.forEachInOrder(ITEMS, i -> i, r -> {});
+        }
+        List<String> alive = Thread.getAllStackTraces().keySet().stream()
+                .filter(Thread::isAlive)
+                .map(Thread::getName)
+                .filter(name -> name.startsWith("chunkpruner-scan-"))
+                .toList();
+        assertEquals(List.of(), alive);
     }
 
     @Test
