@@ -88,7 +88,7 @@ From `region/`: `InhabitedTime`, `Status`, `xPos` and `zPos`, and the `structure
 - For each keep rule, its id, its reason and the number of chunks it kept.
 - The `.txt` file starts with a short summary, for example: "Removed 48,211 unvisited chunks (6.3 GB) from 3 dimensions. Kept 12,904 chunks: 11,870 played in, 812 near players or spawn, 222 next to played chunks." A dry run says "Would remove" and "Would keep".
 
-## 7. Commands (E1, permission level 4 by default)
+## 7. Commands (E1, permission level 4)
 
 | Command | Effect |
 |---|---|
