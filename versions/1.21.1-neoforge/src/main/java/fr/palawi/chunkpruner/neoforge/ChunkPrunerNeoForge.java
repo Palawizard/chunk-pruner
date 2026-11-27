@@ -13,8 +13,7 @@ public final class ChunkPrunerNeoForge {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModInfo.MOD_ID);
 
     public ChunkPrunerNeoForge(ModContainer container) {
-        ChunkPrunerMod.init(
-                "neoforge", container.getModInfo().getVersion().toString(), FMLPaths.CONFIGDIR.get());
+        ChunkPrunerMod.init("neoforge", container.getModInfo().getVersion().toString(), FMLPaths.CONFIGDIR.get());
         LOGGER.info(ModInfo.loadedLine("neoforge", "1.21-1.21.4"));
     }
 }
