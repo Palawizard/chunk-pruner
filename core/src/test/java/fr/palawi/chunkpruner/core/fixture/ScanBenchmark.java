@@ -18,8 +18,9 @@ import java.util.stream.Stream;
 
 /**
  * Scan speed for docs/ARCHITECTURE.md: dry runs over a copy of each world given, with K5 on (the
- * default) and off, for each scan thread count given, timed after one warm-up run. Prints the
- * region files of {@code region/} and the chunks scanned per second, both taken from the report.
+ * default) and off, for each scan thread count given, timed after one warm-up run. Prints the Java
+ * version and hardware threads first, then the region files of {@code region/} and the chunks
+ * scanned per second, both taken from the report.
  * Usage: {@code <runs> <threads,threads,...> <world>...}; each world is copied to a folder under
  * {@code java.io.tmpdir} first, because a dry run writes its report into the world.
  */
@@ -30,6 +31,9 @@ public final class ScanBenchmark {
         int runs = Integer.parseInt(args[0]);
         int[] threads =
                 Arrays.stream(args[1].split(",")).mapToInt(Integer::parseInt).toArray();
+        System.out.println(
+                "Java " + Runtime.version() + ", " + Runtime.getRuntime().availableProcessors()
+                        + " hardware threads, max heap " + Runtime.getRuntime().maxMemory() / (1024 * 1024) + " MB");
         for (int i = 2; i < args.length; i++) {
             Path source = Path.of(args[i]);
             Path temp = Files.createTempDirectory("chunkpruner-benchmark");
