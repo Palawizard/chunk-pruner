@@ -36,6 +36,7 @@ public final class ScanBenchmark {
                         + " hardware threads, max heap " + Runtime.getRuntime().maxMemory() / (1024 * 1024) + " MB");
         for (int i = 2; i < args.length; i++) {
             Path source = Path.of(args[i]);
+            Files.createDirectories(Path.of(System.getProperty("java.io.tmpdir")));
             Path temp = Files.createTempDirectory("chunkpruner-benchmark");
             try {
                 Path world = FixtureWorlds.copy(source, temp.resolve("world"));
