@@ -187,6 +187,8 @@ function Invoke-Server {
     $stdout = Join-Path $serverDir 'smoke.stdout.log'
     $stderr = Join-Path $serverDir 'smoke.stderr.log'
     Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+    # The log of the previous boot would show its 'Done' line, and its checks, before this server starts.
+    Remove-Item -LiteralPath (Join-Path $serverDir 'logs/latest.log') -Force -ErrorAction SilentlyContinue
 
     Write-Host "Starting the $BandId/$Loader dedicated server with the release JAR ($Boot)"
     $startArgs = @{
