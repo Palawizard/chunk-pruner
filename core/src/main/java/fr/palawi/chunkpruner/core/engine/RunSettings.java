@@ -35,8 +35,8 @@ public record RunSettings(
         Objects.requireNonNull(clock, "clock");
         Objects.requireNonNull(compression, "compression");
         Objects.requireNonNull(listener, "listener");
-        if (scanThreads < 1) {
-            throw new IllegalArgumentException("scanThreads must be at least 1");
+        if (scanThreads < 1 || scanThreads > ParallelReads.MAX_THREADS) {
+            throw new IllegalArgumentException("scanThreads must be from 1 to " + ParallelReads.MAX_THREADS);
         }
     }
 

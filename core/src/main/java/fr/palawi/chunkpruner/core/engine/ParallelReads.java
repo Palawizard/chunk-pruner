@@ -3,6 +3,7 @@ package fr.palawi.chunkpruner.core.engine;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,22 +20,26 @@ import java.util.function.Function;
  * at a time. The reads must not share mutable state; nothing is written from these threads.
  */
 final class ParallelReads implements AutoCloseable {
+    static final int MAX_THREADS = 256;
+
     private final ExecutorService executor;
+    private final List<Thread> threads = new CopyOnWriteArrayList<>();
     private final int window;
 
-    ParallelReads(int threads) {
-        if (threads < 1) {
-            throw new IllegalArgumentException("threads must be at least 1");
+    ParallelReads(int threadCount) {
+        if (threadCount < 1 || threadCount > MAX_THREADS) {
+            throw new IllegalArgumentException("threads must be from 1 to " + MAX_THREADS);
         }
         AtomicInteger count = new AtomicInteger();
-        this.executor = threads == 1
+        this.executor = threadCount == 1
                 ? null
-                : Executors.newFixedThreadPool(threads, task -> {
+                : Executors.newFixedThreadPool(threadCount, task -> {
                     Thread thread = new Thread(task, "chunkpruner-scan-" + count.incrementAndGet());
                     thread.setDaemon(true);
+                    threads.add(thread);
                     return thread;
                 });
-        this.window = 2 * threads;
+        this.window = 2 * threadCount;
     }
 
     /** The default: every hardware thread, at most 8 (ARCHITECTURE, Concurrency and safety). */
@@ -89,7 +94,11 @@ final class ParallelReads implements AutoCloseable {
         }
         executor.shutdownNow();
         try {
-            executor.awaitTermination(30, TimeUnit.SECONDS);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            for (Thread thread : threads) {
+                // The pool counts a worker as gone before its thread ends: wait for the thread itself.
+                thread.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

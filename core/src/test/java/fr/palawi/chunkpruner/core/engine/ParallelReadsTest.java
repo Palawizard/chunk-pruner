@@ -104,8 +104,9 @@ class ParallelReadsTest {
     }
 
     @Test
-    void lessThanOneThreadIsRefused() {
+    void aThreadCountOutsideItsRangeIsRefused() {
         assertThrows(IllegalArgumentException.class, () -> new ParallelReads(0));
+        assertThrows(IllegalArgumentException.class, () -> new ParallelReads(ParallelReads.MAX_THREADS + 1));
     }
 
     private static void sleep(long millis) {
