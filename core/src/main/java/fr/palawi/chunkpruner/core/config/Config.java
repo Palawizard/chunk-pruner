@@ -3,10 +3,13 @@ package fr.palawi.chunkpruner.core.config;
 import fr.palawi.chunkpruner.core.world.DimensionId;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -92,7 +95,11 @@ public final class Config {
         if (!Files.exists(file)) {
             Files.createDirectories(file.toAbsolutePath().getParent());
             Path temp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(temp, defaults().toJson(), StandardCharsets.UTF_8);
+            try (FileChannel channel = FileChannel.open(
+                    temp, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                channel.write(ByteBuffer.wrap(defaults().toJson().getBytes(StandardCharsets.UTF_8)));
+                channel.force(true);
+            }
             Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         }
         return load(file);

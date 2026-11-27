@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -100,7 +101,9 @@ class ConfigTest {
         assertEquals(
                 Config.defaults().toJson(), Config.loadOrWriteDefaults(file).toJson());
         assertEquals(Config.defaults().toJson(), Files.readString(file));
-        assertEquals(List.of(file), Files.list(file.getParent()).toList(), "no temporary file is left");
+        try (Stream<Path> files = Files.list(file.getParent())) {
+            assertEquals(List.of(file), files.toList(), "no temporary file is left");
+        }
 
         Files.writeString(file, "{\"backupRetention\": 5}");
         assertEquals(5, Config.loadOrWriteDefaults(file).backupRetention());
