@@ -88,7 +88,7 @@ public final class Engine {
                 RunReport report = report(runId, settings, started, startNanos, data, null, dimensions, warnings);
                 RunResult result = written(world, report);
                 if (settings.mode() == RunMode.PRUNE) {
-                    Backups.applyRetention(world, settings.config().backupRetention(), null);
+                    finish(world, settings, null, result);
                 }
                 return result;
             }
@@ -105,7 +105,7 @@ public final class Engine {
             RunReport report = report(runId, settings, started, startNanos, data, backup, dimensions, warnings);
             RunResult result = written(world, report);
             Journal.finish(world);
-            Backups.applyRetention(world, settings.config().backupRetention(), runId);
+            finish(world, settings, runId, result);
             return result;
         }
     }
@@ -151,9 +151,21 @@ public final class Engine {
             json = ReportFiles.write(world, plan.runId(), Json.write(report), text);
         }
         Journal.finish(world);
-        Backups.applyRetention(world, settings.config().backupRetention(), plan.runId());
         String summary = text.lines().findFirst().orElse("");
-        return new RunResult(null, json, json.resolveSibling(plan.runId() + ".txt"), summary, true);
+        RunResult result = new RunResult(null, json, json.resolveSibling(plan.runId() + ".txt"), summary, true);
+        finish(world, settings, plan.runId(), result);
+        return result;
+    }
+
+    /** SPEC section 4, step 8, once the report is written and the journal deleted. */
+    private static void finish(Path world, RunSettings settings, String runId, RunResult result)
+            throws CleanupException {
+        try {
+            Schedule.clear(world);
+            Backups.applyRetention(world, settings.config().backupRetention(), runId);
+        } catch (IOException e) {
+            throw new CleanupException(result, e);
+        }
     }
 
     private static void applyAll(Path world, Journal.Plan plan, Set<Integer> done, RunListener listener)
