@@ -1,11 +1,12 @@
 # Scenarios of the production-JAR smoke test, dot-sourced by prod-smoke.ps1 after common.ps1 and
-# vanilla-server.ps1. They use its variables ($band, $BandId, $Loader, $serverDir, $ServerPort,
-# $RconPort, $rconPassword) and run over four boots of the same world:
+# vanilla-server.ps1. They use its variables ($band, $BandId, $Loader, $modProps, $serverDir,
+# $ServerPort, $RconPort, $rconPassword) and run over four boots of the same world:
 #   1. S9: the headless join client, a vanilla client without the mod, joins, travels and is kicked.
 #      S10: with a dry run scheduled and no dry-run report yet, `schedule prune` is refused.
 #   2. The scheduled dry run runs at startup, before the levels load; `schedule prune` is accepted.
 #   3. The scheduled prune runs at startup, with a backup; the world then loads without region
-#      errors. S12: on 1.21.1 and 26.3 the server writes LZ4 regions, and the prune reads them.
+#      errors, and its report gives the mod version. S12: on 1.21.1 and 26.3 the server writes LZ4
+#      regions, and the prune reads them.
 #   4. Auto-prune, turned on in the config, runs a dry run at startup and records it.
 # Works on Windows PowerShell 5.1 and on PowerShell 7.
 
@@ -106,6 +107,7 @@ function Invoke-SmokeScenarios {
     if ($problems.Count -gt 0) { throw "After the prune the server logged region problems:`n$($problems -join "`n")" }
     $report = Get-LatestSmokeReport
     if ($report.mode -ne 'prune' -or [long]$report.totals.chunksPruned -le 0) { throw "The prune report removed nothing: $($report.totals | ConvertTo-Json -Compress)" }
+    if ($report.versions.mod -ne $modProps['mod_version']) { throw "The prune report gives mod version '$($report.versions.mod)', expected '$($modProps['mod_version'])'." }
     $restore = Get-ChildItem -LiteralPath (Join-Path (Get-SmokeWorld) 'chunkpruner/backups') -Recurse -Filter 'restore.txt' -File -ErrorAction SilentlyContinue
     if (-not $restore) { throw 'The prune left no backup with restore.txt.' }
     $unreadable = @($report.warnings | Where-Object { $_.type -eq 'unreadable-chunk' -or $_.type -eq 'unreadable-region' })

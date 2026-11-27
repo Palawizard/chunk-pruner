@@ -12,7 +12,11 @@ public final class ChunkPrunerFabric implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        ChunkPrunerMod.init("fabric", FabricLoader.getInstance().getConfigDir());
+        FabricLoader fabric = FabricLoader.getInstance();
+        String version = fabric.getModContainer(ModInfo.MOD_ID)
+                .map(mod -> mod.getMetadata().getVersion().getFriendlyString())
+                .orElse(null);
+        ChunkPrunerMod.init("fabric", version, fabric.getConfigDir());
         LOGGER.info(ModInfo.loadedLine("fabric", "26.3"));
     }
 }

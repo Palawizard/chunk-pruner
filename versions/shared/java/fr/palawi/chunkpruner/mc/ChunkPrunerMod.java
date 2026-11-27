@@ -7,17 +7,22 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** What each loader's entry point gives the shared code: its name and its config folder. */
+/**
+ * What each loader's entry point gives the shared code: its name, the mod version from its
+ * metadata (the JAR manifest is not visible to every loader's class loader) and its config folder.
+ */
 public final class ChunkPrunerMod {
     static final String CONFIG_FILE = "chunkpruner.json";
 
     private static volatile String loader = "unknown";
+    private static volatile String version;
     private static volatile Path configDirectory = Path.of("config");
 
     private ChunkPrunerMod() {}
 
-    public static void init(String loaderName, Path configFolder) {
+    public static void init(String loaderName, String modVersion, Path configFolder) {
         loader = loaderName;
+        version = modVersion;
         configDirectory = configFolder;
     }
 
@@ -26,7 +31,7 @@ public final class ChunkPrunerMod {
     }
 
     static String version() {
-        return ChunkPrunerMod.class.getPackage().getImplementationVersion();
+        return version;
     }
 
     static Path configFile() {
