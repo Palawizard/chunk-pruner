@@ -52,25 +52,28 @@ function Assert-SmokePermission {
 }
 
 function Get-SmokeChunkCompression {
-    # The compression byte of the first chunk of r.0.0.mca in the overworld (4 is LZ4).
-    $file = Get-ChildItem -LiteralPath (Get-SmokeWorld) -Recurse -Filter 'r.0.0.mca' -File |
-        Where-Object { (Split-Path -Leaf (Split-Path -Parent $_.FullName)) -eq 'region' } |
-        Where-Object { $_.FullName -notmatch '[\\/](DIM-?1|the_nether|the_end)[\\/]' } | Select-Object -First 1
-    if (-not $file) { throw 'No overworld r.0.0.mca in the smoke world.' }
-    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-    for ($i = 0; $i -lt 1024; $i++) {
-        $sector = ([int]$bytes[$i * 4] -shl 16) -bor ([int]$bytes[$i * 4 + 1] -shl 8) -bor [int]$bytes[$i * 4 + 2]
-        if ($sector -gt 0) { return [int]$bytes[$sector * 4096 + 4] }
+    # The compression byte of the first chunk of the first overworld region file (4 is LZ4).
+    $world = Get-SmokeWorld
+    $folder = if (Test-Path -LiteralPath (Join-Path $world 'dimensions')) { 'dimensions/minecraft/overworld/region' } else { 'region' }
+    $files = Get-ChildItem -LiteralPath (Join-Path $world $folder) -Filter '*.mca' -File | Sort-Object Name
+    foreach ($file in $files) {
+        $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+        for ($i = 0; $i -lt 1024 -and $bytes.Length -ge 4096; $i++) {
+            $sector = ([int]$bytes[$i * 4] -shl 16) -bor ([int]$bytes[$i * 4 + 1] -shl 8) -bor [int]$bytes[$i * 4 + 2]
+            if ($sector -gt 0) { return [int]$bytes[$sector * 4096 + 4] }
+        }
     }
-    throw "$($file.FullName) has no chunk."
+    throw "No chunk in the region files of $folder."
 }
 
 function Get-SmokeWorldHashes {
+    # Every file of the world but the mod's folder, session.lock and level.dat, which the game
+    # saves again (with its last played time) when it stops.
     $world = Get-SmokeWorld
     $hashes = @{}
     Get-ChildItem -LiteralPath $world -Recurse -File | ForEach-Object {
         $relative = $_.FullName.Substring($world.Length + 1).Replace('\', '/')
-        if (-not $relative.StartsWith('chunkpruner/') -and $relative -ne 'session.lock') {
+        if (-not $relative.StartsWith('chunkpruner/') -and $relative -notin @('session.lock', 'level.dat', 'level.dat_old')) {
             $hashes[$relative] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
         }
     }
