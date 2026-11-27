@@ -20,7 +20,8 @@ param(
 # server unloads and saves them. Each of the $Side by $Side regions around region (0, 0) ends with
 # its 1024 chunks, and the generation around them leaves partly generated regions at the edge. The
 # world is <OutputRoot>/server/world and is never committed; a run started again keeps it and
-# skips the regions that are already full. Works on Windows PowerShell 5.1 and on PowerShell 7.
+# skips the regions that are already full. Written for Windows PowerShell 5.1 and PowerShell 7; run so
+# far with PowerShell 7 on Linux.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 . (Join-Path $PSScriptRoot 'vanilla-server.ps1')
@@ -39,16 +40,6 @@ Write-VanillaServerConfig -ServerDir $serverDir -Properties @(
     'simulation-distance=4', 'spawn-protection=0')
 # The log of an earlier run would show its 'Done' line before this server starts.
 Remove-Item -LiteralPath (Join-Path $serverDir 'logs/latest.log') -ErrorAction SilentlyContinue
-$server = Start-Process -FilePath $javaExe -ArgumentList @("-Xmx$Heap", '-jar', $serverJar, 'nogui') -WorkingDirectory $serverDir `
-    -RedirectStandardOutput (Join-Path $serverDir 'server.stdout.log') -RedirectStandardError (Join-Path $serverDir 'server.stderr.log') -PassThru
-
-function Send-Quiet([string]$Command) {
-    # Invoke-Rcon prints every command; the region loop sends thousands.
-    # A /forceload add can hold the server thread for several seconds; a lost answer is sent again.
-    $answer = Invoke-Rcon -Port $RconPort -Password $password -Command $Command -Retries 5 6>$null
-    $script:rconLog = @()
-    return $answer
-}
 
 function Test-RegionFull([int]$Rx, [int]$Rz) {
     # The region file on disk already holds its 1024 chunks (an earlier run generated it).
@@ -65,6 +56,14 @@ function Test-RegionFull([int]$Rx, [int]$Rz) {
     return $true
 }
 
+function Send-Quiet([string]$Command) {
+    # Invoke-Rcon prints every command; the region loop sends thousands.
+    # A /forceload add can hold the server thread for several seconds; a lost answer is sent again.
+    $answer = Invoke-Rcon -Port $RconPort -Password $password -Command $Command -Retries 5 6>$null
+    $script:rconLog = @()
+    return $answer
+}
+
 function Test-RegionLoaded([int]$Rx, [int]$Rz) {
     for ($row = 0; $row -lt 32; $row++) {
         $z = ($Rz * 32 + $row) * 16 + 8
@@ -74,16 +73,28 @@ function Test-RegionLoaded([int]$Rx, [int]$Rz) {
     return $true
 }
 
-$started = Get-Date
 $half = [int][Math]::Floor($Side / 2)
+# The full regions are found before the server starts: it keeps region files open, which Windows
+# does not let another process read.
+$all = @(for ($rz = -$half; $rz -lt $Side - $half; $rz++) {
+    for ($rx = -$half; $rx -lt $Side - $half; $rx++) { if (-not (Test-RegionFull $rx $rz)) { , @($rx, $rz) } }
+})
+Write-Host "$($all.Count) of $($Side * $Side) regions to generate"
+$startArgs = @{
+    FilePath               = $javaExe
+    ArgumentList           = @("-Xmx$Heap", '-jar', $serverJar, 'nogui')
+    WorkingDirectory       = $serverDir
+    RedirectStandardOutput = (Join-Path $serverDir 'server.stdout.log')
+    RedirectStandardError  = (Join-Path $serverDir 'server.stderr.log')
+    PassThru               = $true
+}
+if ($OnWindows) { $startArgs.WindowStyle = 'Hidden' }
+$server = Start-Process @startArgs
+$started = Get-Date
 try {
     Wait-ServerLog -ServerDir $serverDir -Process $server -Pattern 'Done \([^)]+\)! For help' -Seconds 600
     Send-Quiet 'list' | Out-Null
     $done = 0
-    $all = @(for ($rz = -$half; $rz -lt $Side - $half; $rz++) {
-        for ($rx = -$half; $rx -lt $Side - $half; $rx++) { if (-not (Test-RegionFull $rx $rz)) { , @($rx, $rz) } }
-    })
-    Write-Host "$($all.Count) of $($Side * $Side) regions to generate"
     for ($i = 0; $i -lt $all.Count; $i += $Batch) {
         $group = $all[$i..([Math]::Min($i + $Batch, $all.Count) - 1)]
         foreach ($r in $group) {
@@ -113,4 +124,4 @@ try {
     Stop-ProcessTree $server
 }
 $minutes = ((Get-Date) - $started).TotalMinutes
-Write-Host ("Generated {0} regions in {1:N1} min. World: {2}" -f ($Side * $Side), $minutes, (Join-Path $serverDir 'world')) -ForegroundColor Green
+Write-Host ("Generated {0} regions in {1:N1} min; all {2} regions of the square are full. World: {3}" -f $all.Count, $minutes, ($Side * $Side), (Join-Path $serverDir 'world')) -ForegroundColor Green
