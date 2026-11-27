@@ -7,8 +7,8 @@
 $PortableMcVersion = '5.0.6'
 
 function Get-PortableMc {
-    # The launcher is installed by hand, outside the repository (docs/TESTING.md, Real client
-    # checks): its path comes from -Launcher or the CHUNKPRUNER_PORTABLEMC environment variable.
+    # The launcher is installed by hand, outside the repository (docs/TESTING.md, Played world with
+    # the real client): its path comes from -Launcher or the CHUNKPRUNER_PORTABLEMC environment variable.
     param([string]$Launcher)
     $path = $Launcher
     if (-not $path) { $path = $env:CHUNKPRUNER_PORTABLEMC }
@@ -22,28 +22,14 @@ function Get-PortableMc {
 }
 
 function Get-ClientRoot {
-    # Versions, libraries and assets shared by every client run (about 1.5 GB for the three
-    # vanilla versions), from -ClientRoot or CHUNKPRUNER_CLIENT_ROOT, else build/real-client/.minecraft.
+    # Versions, libraries and assets shared by every client run, from -ClientRoot or
+    # CHUNKPRUNER_CLIENT_ROOT, else build/real-client/.minecraft.
     param([string]$ClientRoot)
     $root = $ClientRoot
     if (-not $root) { $root = $env:CHUNKPRUNER_CLIENT_ROOT }
     if (-not $root) { $root = Join-Path $ProjectRoot 'build/real-client/.minecraft' }
     New-Item -ItemType Directory -Path $root -Force | Out-Null
     return (Resolve-Path -LiteralPath $root).Path
-}
-
-function Get-ClientVersion {
-    # The portablemc version id: the band's vanilla client, or with -Loader the band's loader on
-    # the client, for a singleplayer world with the mods.
-    param([object]$Band, [object]$LoaderConfig, [string]$Loader)
-    if (-not $Loader) { return $Band.compileTarget }
-    $props = Get-BandProperties $LoaderConfig
-    switch ($Loader) {
-        'fabric' { return "fabric:$($Band.compileTarget):$($props['fabric_loader_version'])" }
-        'forge' { return "forge::$($Band.compileTarget)-$($props['forge_version'])" }
-        'neoforge' { return "neoforge::$($props['neo_version'])" }
-    }
-    throw "No client version for loader '$Loader'."
 }
 
 function Write-ClientOptions {
@@ -97,21 +83,28 @@ function Start-RealClient {
         RedirectStandardError  = (Join-Path $GameDir 'launcher.err.log')
         PassThru               = $true
     }
+    if ($OnWindows) { $startArgs.WindowStyle = 'Hidden' }
     $launcherProcess = Start-Process @startArgs
-    # The first run of a version downloads it, so the launcher can take minutes before the game starts.
-    $deadline = (Get-Date).AddMinutes(10)
-    while ((Get-Date) -lt $deadline) {
-        $text = Get-Content -LiteralPath $output -Raw -ErrorAction SilentlyContinue
-        if ($text -match "(?m)^launched\t(\d+)") {
-            return @{ Launcher = $launcherProcess; GamePid = [int]$Matches[1]; GameDir = $GameDir; Name = $Name }
+    $client = $null
+    try {
+        # The first run of a version downloads it, so the launcher can take minutes before the game starts.
+        $deadline = (Get-Date).AddMinutes(10)
+        while ((Get-Date) -lt $deadline) {
+            $text = Get-Content -LiteralPath $output -Raw -ErrorAction SilentlyContinue
+            if ($text -match "(?m)^launched\t(\d+)") {
+                $client = @{ Launcher = $launcherProcess; GamePid = [int]$Matches[1]; GameDir = $GameDir; Name = $Name }
+                return $client
+            }
+            if ($launcherProcess.HasExited) {
+                throw "portablemc stopped before starting the $Version client (exit code $($launcherProcess.ExitCode)), see $output."
+            }
+            Start-Sleep -Milliseconds 500
         }
-        if ($launcherProcess.HasExited) {
-            throw "portablemc stopped before starting the $Version client (exit code $($launcherProcess.ExitCode)), see $output."
-        }
-        Start-Sleep -Milliseconds 500
+        throw "portablemc did not start the $Version client within 10 minutes, see $output."
+    } finally {
+        # A failure or Ctrl+C while waiting must not leave the launcher to open a game later.
+        if (-not $client) { Stop-RealClientProcess -Client @{ Launcher = $launcherProcess; GamePid = 0 } }
     }
-    Stop-RealClientProcess -Client @{ Launcher = $launcherProcess; GamePid = 0 }
-    throw "portablemc did not start the $Version client within 10 minutes, see $output."
 }
 
 function Get-RealClientLog {
