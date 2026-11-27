@@ -40,6 +40,11 @@ public record RunSettings(
         }
     }
 
+    /** The scan threads a run uses unless told otherwise: every hardware thread, at most 8. */
+    public static int defaultScanThreads() {
+        return ParallelReads.defaultThreads();
+    }
+
     public static RunSettings of(Path world, Config config, RunMode mode, RunContext context) {
         return new RunSettings(
                 world,
